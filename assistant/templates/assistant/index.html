@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Voice Assistant</title>
+
+<style>
+* {
+    box-sizing: border-box;
+    font-family: "Segoe UI", sans-serif;
+}
+
+body {
+    margin: 0;
+    height: 100vh;
+    background: radial-gradient(circle at top, #0f2027, #000000 60%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #e0e0e0;
+}
+
+/* Main container */
+.assistant {
+    text-align: center;
+}
+
+/* AI core circle */
+.core {
+    width: 160px;
+    height: 160px;
+    border-radius: 50%;
+    background: radial-gradient(circle, #00f2fe, #0066ff);
+    box-shadow: 0 0 25px rgba(0, 242, 254, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 42px;
+    cursor: pointer;
+    transition: 0.3s;
+    margin: auto;
+}
+
+/* Listening animation */
+.core.listening {
+    animation: glow 1.5s infinite;
+}
+
+/* Speaking animation */
+.core.speaking {
+    background: radial-gradient(circle, #ff5f6d, #ffc371);
+    box-shadow: 0 0 35px rgba(255, 95, 109, 0.8);
+}
+
+@keyframes glow {
+    0% { box-shadow: 0 0 10px rgba(0, 242, 254, 0.4); }
+    50% { box-shadow: 0 0 40px rgba(0, 242, 254, 0.9); }
+    100% { box-shadow: 0 0 10px rgba(0, 242, 254, 0.4); }
+}
+
+h2 {
+    margin: 20px 0 10px;
+    font-weight: 500;
+    letter-spacing: 1px;
+}
+
+.status {
+    font-size: 13px;
+    opacity: 0.7;
+    margin-bottom: 20px;
+}
+
+/* Text panels */
+.panel {
+    width: 360px;
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 10px;
+    padding: 12px;
+    margin: 10px auto;
+    font-size: 14px;
+    text-align: left;
+    min-height: 24px;
+    border-left: 3px solid #00f2fe;
+}
+
+.panel.assistant {
+    border-left-color: #ff5f6d;
+}
+
+
+/* Voice wave container */
+.waves {
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+    margin: 18px 0;
+}
+
+/* Individual bars */
+.waves span {
+    width: 6px;
+    height: 20px;
+    background: linear-gradient(180deg, #00f2fe, #ff5f6d);
+    border-radius: 10px;
+    animation: wave 1.2s infinite ease-in-out;
+    opacity: 0.9;
+}
+
+/* Different delays for natural movement */
+.waves span:nth-child(1) { animation-delay: 0s; }
+.waves span:nth-child(2) { animation-delay: 0.15s; }
+.waves span:nth-child(3) { animation-delay: 0.3s; }
+.waves span:nth-child(4) { animation-delay: 0.45s; }
+.waves span:nth-child(5) { animation-delay: 0.6s; }
+
+@keyframes wave {
+    0%, 100% { height: 14px; }
+    50% { height: 40px; }
+}
+
+/* Hide by default */
+.hidden {
+    display: none;
+}
+
+
+/* Stop button */
+.stop-btn {
+    margin-top: 14px;
+    padding: 8px 20px;
+    border-radius: 20px;
+    border: none;
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    font-size: 14px;
+    cursor: pointer;
+    backdrop-filter: blur(6px);
+    transition: 0.3s;
+}
+
+.stop-btn:hover {
+    background: rgba(255, 95, 109, 0.6);
+}
+
+</style>
+</head>
+
+<body>
+
+<div class="assistant">
+
+    <div id="core" class="core" onclick="startVoice()">🎙
+    <div id="waves" class="waves hidden">
+        <span></span>
+        <span></span>
+        <span></span>
+        <span></span>
+        <span></span>
+    </div>
+    </div>
+    <!-- Voice Waves -->
+
+
+    <h2>Personal Voice Assistant</h2>
+    <div id="status" class="status">Tap the core to speak</div>
+
+    <div class="panel">
+        <b>You:</b>
+        <span id="cmd">—</span>
+    </div>
+
+    <div class="panel assistant">
+        <b>Assistant:</b>
+        <span id="res">—</span>
+    </div>
+    <button id="stopBtn" class="stop-btn" onclick="stopAssistant()">⏹ Stop</button>
+
+</div>
+
+<script src="/static/assistant/js/voice.js"></script>
+
+</body>
+</html>
