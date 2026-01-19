@@ -272,8 +272,14 @@ function startVoice() {
         .then(data => {
             core.classList.remove("listening");
             waves.classList.add("hidden");
-            speak(data.response);
+
+            if (data.text) {
+                speak(data.text);
+            } else {
+                speak("Sorry, I did not understand that.");
+            }
         })
+
         .catch(() => {
             statusText.innerText = "Server error";
         });
