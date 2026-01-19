@@ -9,30 +9,30 @@ load_dotenv()
 # Read API key
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-if not OPENAI_API_KEY:
-    raise RuntimeError("OPENAI_API_KEY not found in .env file")
+client = None
+if OPENAI_API_KEY:
+    client = OpenAI(api_key=OPENAI_API_KEY)
+
 
 # Create OpenAI client
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-ASSISTANT_NAME = "Asifa"
+ASSISTANT_NAME = "jarvis"
 
 
 def ai_chat(text: str) -> str:
+    if not client:
+        return "AI service is not configured."
+
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
-            {
-                "role": "system",
-                "content": "You are Asifa, a polite female voice assistant."
-            },
-            {
-                "role": "user",
-                "content": text
-            }
+            {"role": "system", "content": "You are Jarvis, a polite female voice assistant."},
+            {"role": "user", "content": text}
         ]
     )
     return response.choices[0].message.content
+
 
 
 def process_command(command: str):
