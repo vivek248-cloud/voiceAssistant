@@ -2,182 +2,254 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Voice Assistant</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aura Voice Assistant</title>
 
 <style>
+:root {
+    --primary: #00d2ff;
+    --secondary: #92fe9d;
+    --accent: #ff5f6d;
+    --bg-dark: #050505;
+    --glass: rgba(255, 255, 255, 0.05);
+}
+
 * {
     box-sizing: border-box;
-    font-family: "Segoe UI", sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
 body {
     margin: 0;
     height: 100vh;
-    background: radial-gradient(circle at top, #0f2027, #000000 60%);
+    background-color: var(--bg-dark);
+    background-image: 
+        radial-gradient(at 0% 0%, rgba(0, 210, 255, 0.15) 0px, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(146, 254, 157, 0.1) 0px, transparent 50%);
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #e0e0e0;
+    color: #fff;
+    overflow: hidden;
 }
 
-/* Main container */
-.assistant {
-    text-align: center;
+.container {
+    width: 100%;
+    max-width: 450px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 30px;
 }
 
-/* AI core circle */
-.core {
-    width: 160px;
-    height: 160px;
+/* The Animated Orb */
+.orb-wrapper {
+    position: relative;
+    width: 200px;
+    height: 200px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.orb {
+    position: absolute;
+    width: 120px;
+    height: 120px;
+    background: linear-gradient(45deg, var(--primary), var(--secondary));
     border-radius: 50%;
-    background: radial-gradient(circle, #00f2fe, #0066ff);
-    box-shadow: 0 0 25px rgba(0, 242, 254, 0.6);
+    
+    box-shadow: 0 0 50px rgba(0, 210, 255, 0.4);
+    cursor: pointer;
+    transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    z-index: 2;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 42px;
-    cursor: pointer;
-    transition: 0.3s;
-    margin: auto;
+    font-size: 40px;
 }
 
-/* Listening animation */
-.core.listening {
-    animation: glow 1.5s infinite;
+.orb:hover {
+    transform: scale(1.05);
+    box-shadow: 0 0 70px rgba(0, 210, 255, 0.6);
 }
 
-/* Speaking animation */
-.core.speaking {
-    background: radial-gradient(circle, #ff5f6d, #ffc371);
-    box-shadow: 0 0 35px rgba(255, 95, 109, 0.8);
+/* Background pulse for when listening */
+.orb-pulse {
+    position: absolute;
+    width: 120px;
+    height: 120px;
+    background: var(--primary);
+    border-radius: 50%;
+    opacity: 0;
+    z-index: 1;
 }
 
-@keyframes glow {
-    0% { box-shadow: 0 0 10px rgba(0, 242, 254, 0.4); }
-    50% { box-shadow: 0 0 40px rgba(0, 242, 254, 0.9); }
-    100% { box-shadow: 0 0 10px rgba(0, 242, 254, 0.4); }
+.listening .orb-pulse {
+    animation: ripple 2s infinite;
 }
 
-h2 {
-    margin: 20px 0 10px;
-    font-weight: 500;
-    letter-spacing: 1px;
+.listening .orb {
+    animation: float 3s infinite ease-in-out;
 }
 
-.status {
-    font-size: 13px;
-    opacity: 0.7;
-    margin-bottom: 20px;
+.speaking .orb {
+    background: linear-gradient(45deg, #ff5f6d, #ffc371);
+    box-shadow: 0 0 60px rgba(255, 95, 109, 0.5);
+    transform: scale(1.1);
 }
 
-/* Text panels */
+@keyframes ripple {
+    0% { transform: scale(1); opacity: 0.5; }
+    100% { transform: scale(2.5); opacity: 0; }
+}
+
+@keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-10px); }
+}
+
+/* Text & Panels */
+.header { text-align: center; }
+h2 { margin: 0; font-weight: 300; letter-spacing: 2px; text-transform: uppercase; font-size: 1.2rem; opacity: 0.9; }
+.status { font-size: 0.85rem; color: var(--primary); margin-top: 8px; font-weight: 500; }
+
+.chat-box {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
 .panel {
-    width: 360px;
-    background: rgba(255, 255, 255, 0.06);
-    border-radius: 10px;
-    padding: 12px;
-    margin: 10px auto;
-    font-size: 14px;
-    text-align: left;
-    min-height: 24px;
-    border-left: 3px solid #00f2fe;
+    background: var(--glass);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 16px;
+    padding: 16px;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    transition: 0.3s;
 }
 
-.panel.assistant {
-    border-left-color: #ff5f6d;
+.panel b {
+    display: block;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    margin-bottom: 5px;
+    letter-spacing: 1px;
+    color: var(--primary);
 }
 
+.panel.assistant b { color: var(--accent); }
 
-/* Voice wave container */
+/* Waves for active speech */
 .waves {
     display: flex;
-    justify-content: center;
-    gap: 6px;
-    margin: 18px 0;
-}
-
-/* Individual bars */
-.waves span {
-    width: 6px;
+    align-items: center;
+    gap: 4px;
     height: 20px;
-    background: linear-gradient(180deg, #00f2fe, #ff5f6d);
-    border-radius: 10px;
-    animation: wave 1.2s infinite ease-in-out;
-    opacity: 0.9;
 }
 
-/* Different delays for natural movement */
-.waves span:nth-child(1) { animation-delay: 0s; }
-.waves span:nth-child(2) { animation-delay: 0.15s; }
-.waves span:nth-child(3) { animation-delay: 0.3s; }
-.waves span:nth-child(4) { animation-delay: 0.45s; }
-.waves span:nth-child(5) { animation-delay: 0.6s; }
+.waves span {
+    display: block;
+    width: 3px;
+    height: 100%;
+    background: #fff;
+    border-radius: 4px;
+    animation: wave 1s infinite ease-in-out;
+}
 
 @keyframes wave {
-    0%, 100% { height: 14px; }
-    50% { height: 40px; }
+    0%, 100% { transform: scaleY(0.3); }
+    50% { transform: scaleY(1.2); }
 }
 
-/* Hide by default */
-.hidden {
-    display: none;
+.controls {
+    margin-top: 10px;
 }
 
-
-/* Stop button */
 .stop-btn {
-    margin-top: 14px;
-    padding: 8px 20px;
-    border-radius: 20px;
-    border: none;
-    background: rgba(255, 255, 255, 0.1);
-    color: #fff;
-    font-size: 14px;
+    background: rgba(255, 95, 109, 0.1);
+    border: 1px solid rgba(255, 95, 109, 0.3);
+    color: #ff5f6d;
+    padding: 10px 30px;
+    border-radius: 30px;
     cursor: pointer;
-    backdrop-filter: blur(6px);
+    font-weight: 600;
     transition: 0.3s;
 }
 
 .stop-btn:hover {
-    background: rgba(255, 95, 109, 0.6);
+    background: #ff5f6d;
+    color: white;
 }
 
+.hidden { display: none; }
 </style>
 </head>
 
 <body>
 
-<div class="assistant">
-
-    <div id="core" class="core" onclick="startVoice()">🎙
-    <div id="waves" class="waves hidden">
-        <span></span>
-        <span></span>
-        <span></span>
-        <span></span>
-        <span></span>
-    </div>
-    </div>
-    <!-- Voice Waves -->
-
-
-    <h2>Personal Voice Assistant</h2>
-    <div id="status" class="status">Tap the core to speak</div>
-
-    <div class="panel">
-        <b>You:</b>
-        <span id="cmd">—</span>
+<div class="container">
+    <div class="header">
+        <h2>Jarvis</h2>
+        <div id="status" class="status">Ready to assist</div>
     </div>
 
-    <div class="panel assistant">
-        <b>Assistant:</b>
-        <span id="res">—</span>
+    <div class="orb-wrapper" id="orbContainer">
+        <div class="orb-pulse"></div>
+        <div id="core" class="orb" onclick="startVoice()">
+            <span id="micIcon">🎙</span>
+            <div id="waves" class="waves hidden">
+                <span style="animation-delay: 0.1s"></span>
+                <span style="animation-delay: 0.2s"></span>
+                <span style="animation-delay: 0.3s"></span>
+                <span style="animation-delay: 0.4s"></span>
+            </div>
+        </div>
     </div>
-    <button id="stopBtn" class="stop-btn" onclick="stopAssistant()">⏹ Stop</button>
 
+    <div class="chat-box">
+        <div class="panel">
+            <b>User</b>
+            <span id="cmd">...</span>
+        </div>
+
+        <div class="panel assistant">
+            <b>Assistant</b>
+            <span id="res">Waiting for your command...</span>
+        </div>
+    </div>
+
+    <div class="controls">
+        <button id="stopBtn" class="stop-btn" onclick="stopAssistant()">Stop Session</button>
+    </div>
 </div>
 
 <script src="/static/assistant/js/voice.js"></script>
+<script>
+    // Example toggle function for you to integrate into your voice.js logic
+    function setVisualState(state) {
+        const core = document.getElementById('orbContainer');
+        const mic = document.getElementById('micIcon');
+        const waves = document.getElementById('waves');
+        
+        core.classList.remove('listening', 'speaking');
+        mic.classList.remove('hidden');
+        waves.classList.add('hidden');
+
+        if (state === 'listening') {
+            core.classList.add('listening');
+            mic.classList.add('hidden');
+            waves.classList.remove('hidden');
+        } else if (state === 'speaking') {
+            core.classList.add('speaking');
+        }
+    }
+</script>
 
 </body>
 </html>
