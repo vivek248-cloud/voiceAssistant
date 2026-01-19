@@ -225,7 +225,7 @@ h2 { margin: 0; font-weight: 300; letter-spacing: 2px; text-transform: uppercase
     </div>
 
     <div class="controls">
-        <button id="stopBtn" class="stop-btn" onclick="stopAssistant()">Stop Session</button>
+        <button id="stopBtn" class="stop-btn">Stop Session</button>
     </div>
 </div>
 
@@ -336,6 +336,48 @@ function getCookie(name) {
 }
 
 </script>
+
+<script>
+let recognition;
+let isSpeaking = false;
+
+const stopBtn = document.getElementById("stopBtn");
+
+stopBtn.addEventListener("click", stopAssistant);
+stopBtn.addEventListener("touchstart", stopAssistant);
+
+function stopAssistant(e) {
+    e.preventDefault();
+
+    // Stop speech
+    if (window.speechSynthesis.speaking) {
+        window.speechSynthesis.cancel();
+    }
+
+    // Stop recognition
+    if (recognition) {
+        recognition.abort();
+    }
+
+    isSpeaking = false;
+
+    core.classList.remove("listening", "speaking");
+    waves.classList.add("hidden");
+    statusText.innerText = "Session stopped";
+}
+</script>
+<script>
+function unlockSpeech() {
+    const utterance = new SpeechSynthesisUtterance(" ");
+    utterance.volume = 0;
+    window.speechSynthesis.speak(utterance);
+    document.removeEventListener("touchstart", unlockSpeech);
+}
+
+document.addEventListener("touchstart", unlockSpeech, { once: true });
+</script>
+
+
 <script>
     // Example toggle function for you to integrate into your voice.js logic
     function setVisualState(state) {
