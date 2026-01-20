@@ -21,7 +21,8 @@
 
 body {
     margin: 0;
-    
+    height: 100vh;
+    overflow-y: scroll;
     background-color: var(--bg-dark);
     background-image: 
         radial-gradient(at 0% 0%, rgba(0, 210, 255, 0.15) 0px, transparent 50%),
@@ -218,7 +219,7 @@ h2 { margin: 0; font-weight: 300; letter-spacing: 2px; text-transform: uppercase
             <span id="cmd">...</span>
         </div>
 
-        <div class="panel assistant" style="max-height: 500px; overflow-y: scroll;">
+        <div class="panel assistant" style="max-height: 300px; overflow-y: scroll;">
             <b>Assistant</b>
             <span id="res">Waiting for your command...</span>
         </div>
