@@ -21,7 +21,7 @@
 
 body {
     margin: 0;
-    height: 100vh;
+    
     background-color: var(--bg-dark);
     background-image: 
         radial-gradient(at 0% 0%, rgba(0, 210, 255, 0.15) 0px, transparent 50%),
@@ -299,20 +299,36 @@ document.addEventListener("DOMContentLoaded", () => {
         waves.classList.add("hidden");
         statusText.innerText = "Session stopped";
     }
+function speak(text) {
+    if (!text) return;
 
-    function speak(text) {
-        const msg = new SpeechSynthesisUtterance(text);
-        msg.lang = "en-IN";
+    // 🔴 REQUIRED FOR IPHONE
+    window.speechSynthesis.cancel();
 
-        core.classList.add("speaking");
-        waves.classList.remove("hidden");
-        statusText.innerText = "Speaking...";
+    const msg = new SpeechSynthesisUtterance(text);
+    msg.lang = "en-IN";
+    msg.rate = 1;
+    msg.pitch = 1;
+    msg.volume = 1;
 
-        msg.onend = stopAssistant;
-        document.getElementById("res").innerText = text;
+    core.classList.add("speaking");
+    waves.classList.remove("hidden");
+    statusText.innerText = "Speaking...";
 
+    msg.onend = () => {
+        core.classList.remove("speaking");
+        waves.classList.add("hidden");
+        statusText.innerText = "Tap the core to speak";
+    };
+
+    document.getElementById("res").innerText = text;
+
+    // 🔴 iPhone FIX
+    setTimeout(() => {
         window.speechSynthesis.speak(msg);
-    }
+    }, 0);
+}
+
 
     function unlockSpeech() {
         const u = new SpeechSynthesisUtterance(" ");
