@@ -1,3 +1,4 @@
+
 # JARVIS Dashboard — local/cloud AI starter
 
 Vue 3 + Vite dashboard with a Django REST Framework backend. This version supports
@@ -108,3 +109,7 @@ The response includes `answer`, `model`, and `provider` (`local`, `nvidia`, or
 ## Frontend privacy selector
 
 The dashboard now includes Local, Hybrid, and Cloud modes plus an explicit cloud-permission checkbox. Local is selected by default. In Hybrid or Cloud mode, the checkbox must be enabled before a request can be sent to NVIDIA. The response shows which provider/model answered.
+=======
+# voiceAssistant
+django voice assistant application
+
