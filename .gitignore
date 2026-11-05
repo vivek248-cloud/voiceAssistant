@@ -1,17 +1,42 @@
+
 # Python cache
 __pycache__/
-*.pyc
+*.py[cod]
 *.pyo
 
-# Virtual environment
-env/
+# Python virtual environments
+.venv/
 venv/
+env/
 
-# Environment variables
+# Environment variables and secrets
 .env
+.env.*
+!.env.example
+**/.env
+**/.env.*
 
-# Database
-db.sqlite3
+# Node dependencies
+node_modules/
+**/node_modules/
+
+# Build output
+dist/
+**/dist/
+build/
+
+# Local databases
+*.sqlite3
+*.db
 
 # IDE
 .vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
