@@ -1,23 +1,26 @@
 import os
 
 from rest_framework import status
-from rest_framework.decorators import api_view, throttle_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.response import Response
-from rest_framework.throttling import AnonRateThrottle
+from rest_framework.throttling import UserRateThrottle
 
 from .ai_router import AIProviderError, generate_reply
 
 
-class ChatRateThrottle(AnonRateThrottle):
+class ChatRateThrottle(UserRateThrottle):
     rate = "20/min"
 
 
 @api_view(["GET"])
+@permission_classes([])
 def health(request):
     return Response({"status": "ok", "service": "jarvis-api"})
 
 
 @api_view(["POST"])
+@permission_classes([IsAuthenticated])
 @throttle_classes([ChatRateThrottle])
 def chat(request):
     message = request.data.get("message", "")

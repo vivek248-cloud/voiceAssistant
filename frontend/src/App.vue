@@ -1,6 +1,13 @@
 <script setup>
 import { computed, nextTick, ref } from 'vue'
+import { login, logout, authenticatedFetch } from './api'
 import { Activity, AudioLines, Bot, ChevronDown, Cpu, Menu, Plus, Send, ShieldCheck, Sparkles, Wifi, X, Cloud, Monitor } from 'lucide-vue-next'
+
+const isLoggedIn = ref(false)
+const loginUsername = ref('')
+const loginPassword = ref('')
+const loginBusy = ref(false)
+const loginError = ref('')
 
 const draft = ref('')
 const busy = ref(false)
@@ -14,6 +21,37 @@ const messages = ref([
 const chatBox = ref(null)
 const clock = ref(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
 const cloudAllowed = computed(() => privacyMode.value !== 'local' && allowCloud.value)
+
+
+async function handleLogin() {
+  if (loginBusy.value) return
+
+  loginError.value = ''
+  loginBusy.value = true
+
+  try {
+    await login(loginUsername.value.trim(), loginPassword.value)
+    isLoggedIn.value = true
+    loginPassword.value = ''
+    loginError.value = ''
+  } catch (error) {
+    loginError.value = error.message || 'Login failed. Please try again.'
+  } finally {
+    loginBusy.value = false
+  }
+}
+
+function handleLogout() {
+  logout()
+  isLoggedIn.value = false
+  loginPassword.value = ''
+  loginError.value = ''
+  draft.value = ''
+  mobileMenu.value = false
+  messages.value = [
+    { role: 'assistant', content: 'Good day. JARVIS systems are online. How may I assist you?', provider: 'local', model: 'qwen2.5:1.5b-instruct' }
+  ]
+}
 
 function newChat() {
   messages.value = [{ role: 'assistant', content: 'New session initiated. What would you like to work on?', provider: 'local' }]
@@ -42,7 +80,7 @@ async function sendMessage() {
   busy.value = true
   await nextTick()
   try {
-    const res = await fetch('http://127.0.0.1:8000/api/chat/', {
+    const res = await authenticatedFetch('/api/chat/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -66,7 +104,12 @@ async function sendMessage() {
         ? 'Qwen · Local fallback'
         : 'Qwen · Local'
   } catch (e) {
-    messages.value.push({ role: 'assistant', content: `Connection issue: ${e.message}`, provider: 'error' })
+    if (e.message?.toLowerCase().includes('session has expired')) {
+      handleLogout()
+      loginError.value = 'Your session expired. Please log in again.'
+    } else {
+      messages.value.push({ role: 'assistant', content: `Connection issue: ${e.message}`, provider: 'error' })
+    }
   } finally {
     busy.value = false
     await nextTick()
@@ -85,6 +128,59 @@ function providerLabel(provider) {
 </script>
 
 <template>
+  <section v-if="!isLoggedIn" class="login-screen">
+    <div class="login-card">
+      <div class="login-brand">
+        <div class="brand-mark"><AudioLines :size="25" /></div>
+      </div>
+
+      <div class="login-heading">J.A.R.V.I.S.</div>
+      <div class="login-subtitle">PERSONAL INTELLIGENCE SYSTEM</div>
+
+      <p class="login-description">
+        Authentication required. Sign in to access your private JARVIS workspace.
+      </p>
+
+      <div v-if="loginError" class="login-error">{{ loginError }}</div>
+
+      <form @submit.prevent="handleLogin">
+        <label class="login-field">
+          USERNAME
+          <input
+            v-model="loginUsername"
+            type="text"
+            placeholder="Enter your username"
+            autocomplete="username"
+            required
+            :disabled="loginBusy"
+          >
+        </label>
+
+        <label class="login-field">
+          PASSWORD
+          <input
+            v-model="loginPassword"
+            type="password"
+            placeholder="Enter your password"
+            autocomplete="current-password"
+            required
+            :disabled="loginBusy"
+          >
+        </label>
+
+        <button class="login-button" type="submit" :disabled="loginBusy">
+          <span>{{ loginBusy ? 'AUTHENTICATING...' : 'ACCESS JARVIS' }}</span>
+          <AudioLines :size="16" />
+        </button>
+      </form>
+
+      <div class="login-footer">
+        <span class="live-dot"></span> SECURE AUTHENTICATION GATEWAY
+      </div>
+    </div>
+  </section>
+
+  <template v-else>
   <div class="shell">
     <aside class="sidebar" :class="{ 'sidebar-open': mobileMenu }">
       <div class="brand">
@@ -102,7 +198,11 @@ function providerLabel(provider) {
       <button class="prompt-link" @click="usePrompt('Explain this topic simply, then give me a practical example: ')">Explain a topic</button>
       <button class="prompt-link" @click="usePrompt('Help me calculate and compare these numbers: ')">Run a calculation</button>
       <div class="sidebar-bottom">
-        <div class="profile"><div class="avatar">V</div><div><strong>Local operator</strong><small>Private workspace</small></div><ChevronDown :size="16" class="profile-chevron" /></div>
+        <div class="profile">
+          <div class="avatar">V</div>
+          <div><strong>Local operator</strong><small>Private workspace</small></div>
+          <button class="logout-button" type="button" @click="handleLogout">Logout</button>
+        </div>
       </div>
     </aside>
 
@@ -144,7 +244,7 @@ function providerLabel(provider) {
               <input v-model="allowCloud" type="checkbox" :disabled="privacyMode === 'local'" @change="changePrivacyMode">
               <span><b>Allow cloud processing</b><small v-if="privacyMode === 'local'">Switch to Hybrid or Cloud to enable this.</small><small v-else>When enabled, your message and included history may be sent to NVIDIA.</small></span>
             </label>
-            <div class="privacy-warning" v-if="privacyMode !== 'local' && !allowCloud"> <ShieldCheck :size="14" /> Cloud permission is off. Requests will stay on your PC.</div>
+            <div class="privacy-warning" v-if="privacyMode !== 'local' && !allowCloud"> <ShieldCheck :size="14" /> Cloud permission is off. Requests will be processed on your private VPS using Ollama.</div>
             <div class="privacy-warning cloud-on" v-else-if="allowCloud"><Cloud :size="14" /> Cloud permission enabled. Avoid sending sensitive information.</div>
           </div>
           <div ref="chatBox" class="messages">
@@ -167,4 +267,5 @@ function providerLabel(provider) {
     </main>
     <div v-if="mobileMenu" class="scrim" @click="mobileMenu = false"></div>
   </div>
+  </template>
 </template>
