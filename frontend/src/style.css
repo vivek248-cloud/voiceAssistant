@@ -172,3 +172,58 @@ button,textarea{font:inherit}button{cursor:pointer}.shell{min-height:100vh;displ
   outline: 2px solid #36c9e7;
   outline-offset: 2px;
 }
+
+
+/* JARVIS voice controls */
+.voice-status {
+  margin-top: 9px;
+  color: #55e5ff;
+  font-size: 10px;
+  line-height: 1.5;
+}
+.voice-status.voice-error {
+  color: #ff9b9b;
+}
+.composer-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.voice-button,
+.voice-stop-button {
+  width: 36px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  color: #8cecff;
+  background: #0b2938;
+  border: 1px solid #1b718a;
+}
+.voice-button:hover,
+.voice-stop-button:hover {
+  background: #104054;
+}
+.voice-button:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+.voice-stop-button {
+  color: #ffaaaa;
+  border-color: #8c414b;
+  background: #351b25;
+}
+@media(max-width:480px) {
+  .compose-note {
+    max-width: 48%;
+    line-height: 1.5;
+  }
+  .composer-actions {
+    gap: 6px;
+  }
+  .voice-button,
+  .voice-stop-button {
+    width: 34px;
+    height: 34px;
+  }
+}

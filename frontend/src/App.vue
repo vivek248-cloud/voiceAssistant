@@ -1,7 +1,7 @@
 <script setup>
 import { computed, nextTick, ref } from 'vue'
 import { login, logout, authenticatedFetch } from './api'
-import { Activity, AudioLines, Bot, ChevronDown, Cpu, Menu, Plus, Send, ShieldCheck, Sparkles, Wifi, X, Cloud, Monitor } from 'lucide-vue-next'
+import { Activity, AudioLines, Bot, ChevronDown, Cpu, Menu, Plus, Send, ShieldCheck, Sparkles, Wifi, X, Cloud, Monitor, Mic, MicOff, Volume2, Square } from 'lucide-vue-next'
 
 const isLoggedIn = ref(false)
 const loginUsername = ref('')
@@ -19,6 +19,135 @@ const messages = ref([
   { role: 'assistant', content: "Good day. JARVIS systems are online. How may I assist you?", provider: 'local', model: 'qwen2.5:1.5b-instruct' }
 ])
 const chatBox = ref(null)
+
+const recognition = ref(null)
+const isListening = ref(false)
+const isSpeaking = ref(false)
+const voiceMode = ref(false)
+const voiceError = ref('')
+const pendingVoiceResponse = ref(false)
+
+function unlockSpeech() {
+  if (!('speechSynthesis' in window)) return
+
+  const utterance = new SpeechSynthesisUtterance(' ')
+  utterance.lang = 'en-IN'
+  utterance.volume = 0
+  window.speechSynthesis.speak(utterance)
+}
+
+function stopSpeaking() {
+  if ('speechSynthesis' in window) {
+    window.speechSynthesis.cancel()
+  }
+  isSpeaking.value = false
+}
+
+function speak(text) {
+  if (!text || !('speechSynthesis' in window)) return
+
+  window.speechSynthesis.cancel()
+
+  const utterance = new SpeechSynthesisUtterance(text)
+  utterance.lang = 'en-IN'
+  utterance.rate = 1
+  utterance.pitch = 1
+  utterance.volume = 1
+
+  utterance.onstart = () => {
+    isSpeaking.value = true
+  }
+
+  utterance.onend = () => {
+    isSpeaking.value = false
+  }
+
+  utterance.onerror = () => {
+    isSpeaking.value = false
+  }
+
+  setTimeout(() => {
+    window.speechSynthesis.speak(utterance)
+  }, 0)
+}
+
+function stopVoice() {
+  if (recognition.value) {
+    recognition.value.onend = null
+    recognition.value.abort()
+    recognition.value = null
+  }
+
+  isListening.value = false
+  voiceMode.value = false
+  pendingVoiceResponse.value = false
+  voiceError.value = ''
+  stopSpeaking()
+}
+
+function startVoice() {
+  const SpeechRecognition =
+    window.SpeechRecognition || window.webkitSpeechRecognition
+
+  if (!SpeechRecognition) {
+    voiceError.value = 'Speech recognition is not supported by this browser. Try Google Chrome.'
+    return
+  }
+
+  if (isListening.value) return
+
+  stopSpeaking()
+  voiceError.value = ''
+  voiceMode.value = true
+  unlockSpeech()
+
+  const instance = new SpeechRecognition()
+  recognition.value = instance
+
+  instance.lang = 'en-IN'
+  instance.continuous = false
+  instance.interimResults = false
+  instance.maxAlternatives = 1
+
+  instance.onstart = () => {
+    isListening.value = true
+  }
+
+  instance.onresult = (event) => {
+    const transcript = event.results?.[0]?.[0]?.transcript?.trim()
+
+    if (transcript) {
+      pendingVoiceResponse.value = true
+      draft.value = transcript
+      nextTick(() => sendMessage())
+    }
+  }
+
+  instance.onerror = (event) => {
+    isListening.value = false
+
+    if (event.error !== 'aborted' && event.error !== 'no-speech') {
+      voiceError.value = `Microphone error: ${event.error}`
+    } else if (event.error === 'no-speech') {
+      voiceError.value = 'No speech detected. Please try again.'
+    }
+  }
+
+  instance.onend = () => {
+    isListening.value = false
+    if (recognition.value === instance) {
+      recognition.value = null
+    }
+  }
+
+  try {
+    instance.start()
+  } catch (error) {
+    isListening.value = false
+    recognition.value = null
+    voiceError.value = 'Could not start the microphone. Please try again.'
+  }
+}
 const clock = ref(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
 const cloudAllowed = computed(() => privacyMode.value !== 'local' && allowCloud.value)
 
@@ -42,6 +171,7 @@ async function handleLogin() {
 }
 
 function handleLogout() {
+  stopVoice()
   logout()
   isLoggedIn.value = false
   loginPassword.value = ''
@@ -65,6 +195,9 @@ function changePrivacyMode() {
 async function sendMessage() {
   const text = draft.value.trim()
   if (!text || busy.value) return
+
+  const speakResponse = pendingVoiceResponse.value && voiceMode.value
+  pendingVoiceResponse.value = false
 
   if (privacyMode.value !== 'local' && !allowCloud.value) {
     providerStatus.value = 'Local only · Cloud permission is off'
@@ -98,6 +231,10 @@ async function sendMessage() {
       provider: data.provider,
       model: data.model
     })
+
+    if (speakResponse && voiceMode.value) {
+      speak(data.answer)
+    }
     providerStatus.value = data.provider === 'nvidia'
       ? 'NVIDIA Nemotron · Cloud'
       : data.provider === 'local_fallback'
@@ -256,9 +393,25 @@ function providerLabel(provider) {
           </div>
           <div class="composer">
             <div class="composer-top"><Sparkles :size="14" /> <span>Ask JARVIS anything</span><span class="composer-hint">ENTER TO SEND</span></div>
+            <div v-if="isListening || isSpeaking || voiceError" class="voice-status" :class="{ 'voice-error': voiceError }">
+              <span v-if="isListening">Listening... Speak now.</span>
+              <span v-else-if="isSpeaking">JARVIS is speaking...</span>
+              <span v-else>{{ voiceError }}</span>
+            </div>
             <form @submit.prevent="sendMessage">
               <textarea v-model="draft" rows="2" placeholder="Type a message or ask a question..." @keydown.enter.exact.prevent="sendMessage"></textarea>
-              <div class="composer-bottom"><div class="compose-note"><span class="tiny-lock">⌑</span> API key stays on backend · {{ cloudAllowed ? 'Cloud permitted' : 'Local only' }}</div><button class="send-button" :disabled="busy || !draft.trim()" type="submit"><span>{{ busy ? 'Working' : 'Send' }}</span><Send :size="15" /></button></div>
+              <div class="composer-bottom">
+                <div class="compose-note"><span class="tiny-lock">⌑</span> API key stays on backend · {{ cloudAllowed ? 'Cloud permitted' : 'Local only' }}</div>
+                <div class="composer-actions">
+                  <button class="voice-button" type="button" @click="startVoice" :disabled="busy || isListening" title="Speak to JARVIS" aria-label="Start voice input">
+                    <Mic :size="16" />
+                  </button>
+                  <button v-if="voiceMode || isSpeaking" class="voice-stop-button" type="button" @click="stopVoice" title="Stop voice session" aria-label="Stop voice session">
+                    <Square :size="14" />
+                  </button>
+                  <button class="send-button" :disabled="busy || !draft.trim()" type="submit"><span>{{ busy ? 'Working' : 'Send' }}</span><Send :size="15" /></button>
+                </div>
+              </div>
             </form>
           </div>
         </section>
