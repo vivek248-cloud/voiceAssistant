@@ -1,5 +1,5 @@
-import { authenticatedFetch } from './api'
 <script setup>
+import { login, logout, authenticatedFetch } from './api'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Activity, AudioLines, Bot, ChevronDown, Cpu, Menu, Mic, MicOff, Plus, Send, ShieldCheck, Sparkles, Square, Volume2, VolumeX, Wifi, X, Cloud } from 'lucide-vue-next'
 
@@ -21,6 +21,46 @@ const lastLatency = ref(null)
 const startedAt = Date.now()
 const uptime = ref('00:00')
 const cloudAllowed = computed(() => privacyMode.value !== 'local' && allowCloud.value)
+
+
+/* ---------- authentication ---------- */
+const isLoggedIn = ref(false)
+const loginUsername = ref('')
+const loginPassword = ref('')
+const loginBusy = ref(false)
+const loginError = ref('')
+
+async function handleLogin() {
+  if (loginBusy.value) return
+
+  loginBusy.value = true
+  loginError.value = ''
+
+  try {
+    await login(loginUsername.value.trim(), loginPassword.value)
+    isLoggedIn.value = true
+    loginPassword.value = ''
+    loginError.value = ''
+  } catch (error) {
+    loginError.value = error.message || 'Login failed. Please try again.'
+  } finally {
+    loginBusy.value = false
+  }
+}
+
+function handleLogout() {
+  stopListening()
+  stopSpeaking()
+  logout()
+  isLoggedIn.value = false
+  loginPassword.value = ''
+  loginError.value = ''
+  draft.value = ''
+  mobileMenu.value = false
+  messages.value = [
+    { role: 'assistant', content: 'Good day. JARVIS systems are online. How may I assist you?', provider: 'local', model: 'qwen2.5:1.5b-instruct' }
+  ]
+}
 
 /* ---------- voice state ---------- */
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition
@@ -103,9 +143,9 @@ async function sendMessage() {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        messages,
-        privacy_mode: privacyMode,
-        allow_cloud: allowCloud
+        messages: [...history, { role: 'user', content: text }],
+        privacy_mode: privacyMode.value,
+        allow_cloud: cloudAllowed.value
       })
     })
     const data = await res.json()
@@ -116,6 +156,11 @@ async function sendMessage() {
       : data.provider === 'local_fallback' ? 'Qwen · Local fallback' : 'Qwen · Local'
     if (autoSpeak.value && voiceSupported) speak(data.answer)
   } catch (e) {
+    if (e.message && (e.message.includes('session has expired') || e.message.includes('Please log in'))) {
+      handleLogout()
+      loginError.value = e.message
+      return
+    }
     messages.value.push({ role: 'assistant', content: `Connection issue: ${e.message}`, provider: 'error' })
     if (autoSpeak.value && voiceSupported) speak('I am having trouble reaching my core systems, sir.')
   } finally {
@@ -324,6 +369,51 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
+  <div v-if="!isLoggedIn" class="login-screen">
+    <div class="login-card">
+      <div class="login-logo"><AudioLines :size="32" /></div>
+      <div class="login-brand">J.A.R.V.I.S.</div>
+      <div class="login-subtitle">PERSONAL INTELLIGENCE SYSTEM</div>
+
+      <div class="login-heading">Welcome back</div>
+      <p class="login-description">Authenticate to access your private AI workspace.</p>
+
+      <form @submit.prevent="handleLogin">
+        <label class="login-label" for="jarvis-username">ADMINISTRATOR USERNAME</label>
+        <input
+          id="jarvis-username"
+          v-model="loginUsername"
+          class="login-input"
+          type="text"
+          placeholder="Enter Django username"
+          autocomplete="username"
+          required
+          autofocus
+        />
+
+        <label class="login-label" for="jarvis-password">PASSWORD</label>
+        <input
+          id="jarvis-password"
+          v-model="loginPassword"
+          class="login-input"
+          type="password"
+          placeholder="Enter your password"
+          autocomplete="current-password"
+          required
+        />
+
+        <div v-if="loginError" class="login-error" role="alert">{{ loginError }}</div>
+
+        <button class="login-submit" type="submit" :disabled="loginBusy || !loginUsername.trim() || !loginPassword">
+          {{ loginBusy ? 'AUTHENTICATING...' : 'ACCESS JARVIS' }}
+        </button>
+      </form>
+
+      <div class="login-security"><ShieldCheck :size="14" /> Secure administrator authentication</div>
+    </div>
+  </div>
+
+  <div v-else>
   <div class="shell" :class="`state-${orbState}`" :style="{ '--lvl': level }">
     <div class="hud-grid" aria-hidden="true"></div>
     <div class="scanline" aria-hidden="true"></div>
@@ -371,7 +461,7 @@ onBeforeUnmount(() => {
       <header class="topbar">
         <button class="icon-button menu-button" @click="mobileMenu = !mobileMenu"><Menu :size="20" /></button>
         <div class="breadcrumb">Workspace <span>/</span> <b>Assistant</b></div>
-        <div class="top-status"><span class="live-dot"></span> SYSTEM NOMINAL <span class="top-divider"></span><span class="time">{{ clock }}</span></div>
+        <div class="top-status"><span class="live-dot"></span> SYSTEM NOMINAL <span class="top-divider"></span><span class="time">{{ clock }}</span><button class="logout-button" type="button" @click="handleLogout">Logout</button></div>
       </header>
 
       <section class="content">
@@ -474,4 +564,156 @@ onBeforeUnmount(() => {
     </main>
     <div v-if="mobileMenu" class="scrim" @click="mobileMenu = false"></div>
   </div>
+  </div>
 </template>
+
+
+<style scoped>
+.login-screen {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  box-sizing: border-box;
+  background: #080d16;
+  color: #eaf5ff;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 420px;
+  box-sizing: border-box;
+  padding: 42px 36px;
+  border: 1px solid rgba(90, 180, 255, 0.2);
+  border-radius: 18px;
+  background: #101927;
+  box-shadow: 0 25px 80px rgba(0, 0, 0, 0.45);
+}
+
+.login-logo {
+  width: 62px;
+  height: 62px;
+  margin: 0 auto 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #65c8ff;
+  border: 1px solid rgba(101, 200, 255, 0.4);
+  border-radius: 16px;
+}
+
+.login-brand {
+  text-align: center;
+  color: #eaf5ff;
+  font-size: 25px;
+  font-weight: 700;
+  letter-spacing: 5px;
+}
+
+.login-subtitle {
+  text-align: center;
+  color: #6f91aa;
+  font-size: 9px;
+  letter-spacing: 2px;
+  margin-top: 8px;
+}
+
+.login-heading {
+  color: #f0f6ff;
+  font-size: 23px;
+  font-weight: 600;
+  margin-top: 38px;
+}
+
+.login-description {
+  color: #91a4b9;
+  font-size: 13px;
+  margin: 8px 0 28px;
+}
+
+.login-label {
+  display: block;
+  color: #91b5ce;
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  margin: 20px 0 9px;
+}
+
+.login-input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 14px;
+  border: 1px solid #293e52;
+  border-radius: 8px;
+  background: #0a1320;
+  color: #fff;
+  outline: none;
+}
+
+.login-input:focus {
+  border-color: #55baff;
+  box-shadow: 0 0 0 3px rgba(85, 186, 255, 0.1);
+}
+
+.login-submit {
+  width: 100%;
+  margin-top: 26px;
+  padding: 15px;
+  border: 0;
+  border-radius: 8px;
+  background: #168bd1;
+  color: #fff;
+  font-weight: 700;
+  letter-spacing: 1px;
+  cursor: pointer;
+}
+
+.login-submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.login-error {
+  color: #ff8585;
+  font-size: 13px;
+  margin-top: 15px;
+}
+
+.login-security {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  margin-top: 25px;
+  color: #7195aa;
+  font-size: 11px;
+}
+
+.logout-button {
+  margin-left: 12px;
+  padding: 7px 11px;
+  border: 1px solid rgba(120, 170, 205, 0.3);
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.logout-button:hover {
+  border-color: #65c8ff;
+  color: #65c8ff;
+}
+
+@media (max-width: 480px) {
+  .login-card {
+    padding: 32px 22px;
+  }
+  .logout-button {
+    margin-left: 6px;
+    padding: 6px 8px;
+  }
+}
+</style>
