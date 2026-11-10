@@ -1,7 +1,6 @@
 <script setup>
-import { login, logout, authenticatedFetch } from './api'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Activity, AudioLines, Bot, ChevronDown, Cpu, Menu, Mic, MicOff, Plus, Send, ShieldCheck, Sparkles, Square, Volume2, VolumeX, Wifi, X, Cloud } from 'lucide-vue-next'
+import { Activity, AudioLines, Bot, Cloud, Cpu, Maximize, Mic, MicOff, Plus, Send, ShieldCheck, Sparkles, Square, Volume2, VolumeX, X } from 'lucide-vue-next'
 
 /* ---------- state ---------- */
 const draft = ref('')
@@ -21,46 +20,6 @@ const lastLatency = ref(null)
 const startedAt = Date.now()
 const uptime = ref('00:00')
 const cloudAllowed = computed(() => privacyMode.value !== 'local' && allowCloud.value)
-
-
-/* ---------- authentication ---------- */
-const isLoggedIn = ref(false)
-const loginUsername = ref('')
-const loginPassword = ref('')
-const loginBusy = ref(false)
-const loginError = ref('')
-
-async function handleLogin() {
-  if (loginBusy.value) return
-
-  loginBusy.value = true
-  loginError.value = ''
-
-  try {
-    await login(loginUsername.value.trim(), loginPassword.value)
-    isLoggedIn.value = true
-    loginPassword.value = ''
-    loginError.value = ''
-  } catch (error) {
-    loginError.value = error.message || 'Login failed. Please try again.'
-  } finally {
-    loginBusy.value = false
-  }
-}
-
-function handleLogout() {
-  stopListening()
-  stopSpeaking()
-  logout()
-  isLoggedIn.value = false
-  loginPassword.value = ''
-  loginError.value = ''
-  draft.value = ''
-  mobileMenu.value = false
-  messages.value = [
-    { role: 'assistant', content: 'Good day. JARVIS systems are online. How may I assist you?', provider: 'local', model: 'qwen2.5:1.5b-instruct' }
-  ]
-}
 
 /* ---------- voice state ---------- */
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition
@@ -113,6 +72,7 @@ function providerLabel(p) {
   return p === 'nvidia' ? 'NVIDIA CLOUD' : p === 'local_fallback' ? 'LOCAL FALLBACK' : p === 'local' ? 'LOCAL QWEN' : 'AI SYSTEM'
 }
 function tick() {
+  now.value = new Date()
   clock.value = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
   const s = Math.floor((Date.now() - startedAt) / 1000)
   uptime.value = `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
@@ -137,19 +97,10 @@ async function sendMessage() {
   scrollDown()
   const t0 = performance.now()
   try {
-    const res = await authenticatedFetch('/api/chat/', {
+    const res = await fetch('http://127.0.0.1:8000/api/chat/', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        // Send the latest text as `message` for the chat endpoint's required field.
-        // Keep `messages` as conversation context for providers that use chat history.
-        message: text,
-        messages: [...history, { role: 'user', content: text }],
-        privacy_mode: privacyMode.value,
-        allow_cloud: cloudAllowed.value
-      })
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: text, history, privacy_mode: privacyMode.value, allow_cloud: cloudAllowed.value })
     })
     const data = await res.json()
     if (!res.ok) throw new Error(data.error || 'Request failed')
@@ -159,11 +110,6 @@ async function sendMessage() {
       : data.provider === 'local_fallback' ? 'Qwen · Local fallback' : 'Qwen · Local'
     if (autoSpeak.value && voiceSupported) speak(data.answer)
   } catch (e) {
-    if (e.message && (e.message.includes('session has expired') || e.message.includes('Please log in'))) {
-      handleLogout()
-      loginError.value = e.message
-      return
-    }
     messages.value.push({ role: 'assistant', content: `Connection issue: ${e.message}`, provider: 'error' })
     if (autoSpeak.value && voiceSupported) speak('I am having trouble reaching my core systems, sir.')
   } finally {
@@ -344,7 +290,7 @@ function stopListening() {
 function toggleMic() { listening.value ? stopListening() : startListening() }
 function onHotkey(e) {
   if (e.altKey && e.code === 'KeyJ') { e.preventDefault(); toggleMic() }
-  if (e.key === 'Escape') stopSpeaking()
+  if (e.key === 'Escape') { stopSpeaking(); dialOpen.value = false }
 }
 
 watch([voiceName, rate, pitch, lang], () => {
@@ -354,6 +300,60 @@ watch([voiceName, rate, pitch, lang], () => {
   localStorage.setItem('jarvis.lang', lang.value)
   if (listening.value) { stopListening(); startListening() }
 })
+
+/* ---------- date / gauges ---------- */
+const now = ref(new Date())
+const dayNum = computed(() => now.value.getDate())
+const monthName = computed(() => now.value.toLocaleDateString([], { month: 'long' }).toUpperCase())
+const weekday = computed(() => now.value.toLocaleDateString([], { weekday: 'long' }).toUpperCase())
+const bigClock = computed(() => now.value.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }))
+const gLatency = computed(() => lastLatency.value ? Math.min(100, Math.round(lastLatency.value / 60)) : 0)
+const gLevel = computed(() => Math.round(level.value * 100))
+const gMsgs = computed(() => Math.min(100, messages.value.length * 8))
+
+/* ---------- rotary dial menu ---------- */
+const dialOpen = ref(false)
+const dialRot = ref(0)
+const dialDur = ref(0)
+const dialBusy = ref(false)
+const dialActive = ref(-1)
+const STOP = 120 // finger stop, degrees clockwise from 12 o'clock (about 4 o'clock, like a real rotary phone)
+function focusEl(id) {
+  const el = document.getElementById(id)
+  if (!el) return
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  el.classList.add('flash')
+  setTimeout(() => el.classList.remove('flash'), 1400)
+}
+const dialItems = [
+  { label: 'ASSISTANT', icon: Bot, run: () => focusEl('panel-chat') },
+  { label: 'VOICE', icon: Mic, run: () => toggleMic() },
+  { label: 'PRIVACY', icon: ShieldCheck, run: () => focusEl('panel-privacy') },
+  { label: 'VOICE SETUP', icon: Volume2, run: () => { showVoice.value = true; focusEl('panel-voice') } },
+  { label: 'NEW CHAT', icon: Plus, run: () => newChat() },
+  { label: 'PROMPTS', icon: Sparkles, run: () => focusEl('panel-prompts') },
+  { label: 'SYSTEM', icon: Activity, run: () => focusEl('panel-system') },
+  { label: 'FULLSCREEN', icon: Maximize, run: () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.()) }
+].map((it, k) => ({ ...it, angle: STOP - 40 - k * 30 })) // hole 1 sits closest to the stop, like the digit 1
+function dialPick(i) {
+  if (dialBusy.value) return
+  dialBusy.value = true
+  dialActive.value = i
+  const it = dialItems[i]
+  const deg = (((STOP - it.angle) % 360) + 360) % 360 // clockwise travel to reach the stop
+  dialDur.value = 260 + deg * 2.2
+  dialRot.value = deg                                  // 1) drag the hole round to the stop
+  setTimeout(() => {
+    dialDur.value = 200 + deg * 1.6
+    dialRot.value = 0                                  // 2) release: the dial springs back
+    setTimeout(() => {
+      dialActive.value = -1
+      dialOpen.value = false
+      dialBusy.value = false
+      it.run()                                         // 3) "number dialled": run the action
+    }, dialDur.value + 60)
+  }, dialDur.value + 180)
+}
 
 /* ---------- lifecycle ---------- */
 onMounted(() => {
@@ -372,52 +372,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div v-if="!isLoggedIn" class="login-screen">
-    <div class="login-card">
-      <div class="login-logo"><AudioLines :size="32" /></div>
-      <div class="login-brand">J.A.R.V.I.S.</div>
-      <div class="login-subtitle">PERSONAL INTELLIGENCE SYSTEM</div>
-
-      <div class="login-heading">Welcome back</div>
-      <p class="login-description">Authenticate to access your private AI workspace.</p>
-
-      <form @submit.prevent="handleLogin">
-        <label class="login-label" for="jarvis-username">ADMINISTRATOR USERNAME</label>
-        <input
-          id="jarvis-username"
-          v-model="loginUsername"
-          class="login-input"
-          type="text"
-          placeholder="Enter Django username"
-          autocomplete="username"
-          required
-          autofocus
-        />
-
-        <label class="login-label" for="jarvis-password">PASSWORD</label>
-        <input
-          id="jarvis-password"
-          v-model="loginPassword"
-          class="login-input"
-          type="password"
-          placeholder="Enter your password"
-          autocomplete="current-password"
-          required
-        />
-
-        <div v-if="loginError" class="login-error" role="alert">{{ loginError }}</div>
-
-        <button class="login-submit" type="submit" :disabled="loginBusy || !loginUsername.trim() || !loginPassword">
-          {{ loginBusy ? 'AUTHENTICATING...' : 'ACCESS JARVIS' }}
-        </button>
-      </form>
-
-      <div class="login-security"><ShieldCheck :size="14" /> Secure administrator authentication</div>
-    </div>
-  </div>
-
-  <div v-else>
-  <div class="shell" :class="`state-${orbState}`" :style="{ '--lvl': level }">
+  <div class="shell hud" :class="`state-${orbState}`" :style="{ '--lvl': level }">
     <div class="hud-grid" aria-hidden="true"></div>
     <div class="scanline" aria-hidden="true"></div>
 
@@ -429,73 +384,32 @@ onBeforeUnmount(() => {
       </div>
     </transition>
 
-    <aside class="sidebar" :class="{ 'sidebar-open': mobileMenu }">
-      <div class="brand">
-        <div class="brand-mark"><AudioLines :size="22" /></div>
-        <div><div class="brand-title">J.A.R.V.I.S.</div><div class="brand-sub">PERSONAL INTELLIGENCE</div></div>
-        <button class="icon-button mobile-close" @click="mobileMenu = false"><X :size="18" /></button>
-      </div>
-      <button class="new-chat" @click="newChat"><Plus :size="17" /> New conversation</button>
-
-      <div class="nav-label">SYSTEM</div>
-      <div class="nav-item active"><Bot :size="17" /> Assistant <span class="nav-dot"></span></div>
-      <div class="nav-item muted"><Activity :size="17" /> Activity monitor <span class="soon">SOON</span></div>
-      <div class="nav-item muted"><ShieldCheck :size="17" /> Personal memory <span class="soon">SOON</span></div>
-
-      <div class="nav-label tools-label">TELEMETRY</div>
-      <div class="telemetry">
-        <div><small>UPTIME</small><b>{{ uptime }}</b></div>
-        <div><small>LAST REPLY</small><b>{{ lastLatency ? (lastLatency / 1000).toFixed(1) + 's' : '—' }}</b></div>
-        <div><small>MESSAGES</small><b>{{ messages.length }}</b></div>
-        <div><small>VOICE</small><b>{{ voiceSupported ? (listening ? 'LIVE' : 'READY') : 'N/A' }}</b></div>
-      </div>
-
-      <div class="nav-label tools-label">QUICK PROMPTS</div>
-      <button class="prompt-link" @click="usePrompt('Help me plan my day with priorities and time blocks.')">Plan my day</button>
-      <button class="prompt-link" @click="usePrompt('Explain this topic simply, then give me a practical example: ')">Explain a topic</button>
-      <button class="prompt-link" @click="usePrompt('Help me calculate and compare these numbers: ')">Run a calculation</button>
-
-      <div class="sidebar-bottom">
-        <div class="profile"><div class="avatar">V</div><div><strong>Local operator</strong><small>Private workspace</small></div><ChevronDown :size="16" class="profile-chevron" /></div>
-      </div>
-    </aside>
-
-    <main class="main">
-      <header class="topbar">
-        <button class="icon-button menu-button" @click="mobileMenu = !mobileMenu"><Menu :size="20" /></button>
-        <div class="breadcrumb">Workspace <span>/</span> <b>Assistant</b></div>
-        <div class="top-status"><span class="live-dot"></span> SYSTEM NOMINAL <span class="top-divider"></span><span class="time">{{ clock }}</span><button class="logout-button" type="button" @click="handleLogout">Logout</button></div>
-      </header>
-
-      <section class="content">
-        <div class="hero">
-          <div class="eyebrow"><span class="eyebrow-line"></span> PERSONAL AI INTERFACE <span class="eyebrow-line"></span></div>
-
-          <button class="reactor-wrap" :class="`orb-${orbState}`" @click="toggleMic" :title="listening ? 'Mute microphone (Alt+J)' : 'Activate voice (Alt+J)'" aria-label="Toggle voice">
-            <span class="ring ring-a"></span><span class="ring ring-b"></span><span class="ring ring-c"></span>
-            <span class="ticks"></span>
-            <span class="halo"></span>
-            <span class="reactor"><span class="reactor-inner"><component :is="listening ? Mic : AudioLines" :size="35" /></span></span>
-            <span class="bars" aria-hidden="true"><i v-for="n in 24" :key="n" :style="{ '--i': n }"></i></span>
+    <!-- rotary dial menu -->
+    <div class="dial" :class="{ open: dialOpen }">
+      <div v-if="dialOpen" class="dial-scrim" @click="!dialBusy && (dialOpen = false)"></div>
+      <div class="dial-body">
+        <div class="dial-disc" :style="{ '--rot': dialRot + 'deg', transitionDuration: dialDur + 'ms' }">
+          <button v-for="(it, i) in dialItems" :key="it.label" class="hole" :class="{ active: dialActive === i }"
+            :style="{ '--a': it.angle + 'deg' }" :aria-label="it.label" @click="dialPick(i)">
+            <span class="hole-in"><component :is="it.icon" :size="18" /><em>{{ it.label }}</em></span>
           </button>
-
-          <div class="orb-label">{{ orbLabel }}</div>
-          <h1>At your service<span>.</span></h1>
-          <p class="hero-copy">{{ listening && wakeWord ? 'Say “Jarvis” followed by your request.' : 'Intelligence at your fingertips. What shall we accomplish today?' }}</p>
-
-          <div class="metrics">
-            <div class="metric"><span class="metric-icon"><Cpu :size="15" /></span><div><small>ACTIVE MODEL</small><strong>{{ providerStatus }}</strong></div></div>
-            <div class="metric"><span class="metric-icon"><ShieldCheck :size="15" /></span><div><small>PRIVACY DEFAULT</small><strong>Local processing</strong></div></div>
-            <div class="metric"><span class="metric-icon"><Wifi :size="15" /></span><div><small>INTERFACE</small><strong>Local workspace</strong></div></div>
-          </div>
         </div>
+        <span class="dial-stop"></span>
+      </div>
+      <button class="dial-hub" @click="!dialBusy && (dialOpen = !dialOpen)" aria-label="Menu"><component :is="dialOpen ? X : AudioLines" :size="22" /></button>
+    </div>
 
-        <section class="chat-panel">
-          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-          <div class="panel-heading"><div><span class="panel-led"></span><strong>Conversation</strong><small> · Secure model gateway</small></div><button class="clear-button" @click="newChat">Clear session</button></div>
+    <header class="hud-top">
+      <div class="hud-title"><b>J.A.R.V.I.S.</b><small>What can I do for you, sir?</small></div>
+      <div class="date-block"><div class="d-num">{{ dayNum }}</div><div class="d-txt"><b>{{ monthName }}</b><small>{{ weekday }}</small></div></div>
+    </header>
 
+    <main class="hud-main">
+      <!-- LEFT -->
+      <aside class="col">
+        <section id="panel-privacy" class="card">
+          <h3>AI ROUTING &amp; PRIVACY</h3>
           <div class="privacy-controls">
-            <div class="privacy-heading"><ShieldCheck :size="16" /><div><strong>AI routing & privacy</strong><small>Local is the default. Cloud is opt-in.</small></div></div>
             <label class="mode-field">AI MODE
               <select v-model="privacyMode" @change="changePrivacyMode">
                 <option value="local">Local · Qwen only</option>
@@ -505,38 +419,43 @@ onBeforeUnmount(() => {
             </label>
             <label class="cloud-consent" :class="{ disabled: privacyMode === 'local' }">
               <input v-model="allowCloud" type="checkbox" :disabled="privacyMode === 'local'" @change="changePrivacyMode">
-              <span><b>Allow cloud processing</b><small v-if="privacyMode === 'local'">Switch to Hybrid or Cloud to enable this.</small><small v-else>When enabled, your message and included history may be sent to NVIDIA.</small></span>
+              <span><b>Allow cloud processing</b><small v-if="privacyMode === 'local'">Switch to Hybrid or Cloud to enable.</small><small v-else>Your message and history may be sent to NVIDIA.</small></span>
             </label>
-            <div class="privacy-warning" v-if="privacyMode !== 'local' && !allowCloud"><ShieldCheck :size="14" /> Cloud permission is off. Requests will stay on your PC.</div>
-            <div class="privacy-warning cloud-on" v-else-if="allowCloud"><Cloud :size="14" /> Cloud permission enabled. Avoid sending sensitive information.</div>
+            <div class="privacy-warning" v-if="privacyMode !== 'local' && !allowCloud"><ShieldCheck :size="14" /> Cloud is off. Requests stay on your PC.</div>
+            <div class="privacy-warning cloud-on" v-else-if="allowCloud"><Cloud :size="14" /> Cloud enabled. Avoid sensitive data.</div>
           </div>
+        </section>
 
-          <div class="voice-bar">
-            <button class="mic-btn" :class="{ on: listening }" :disabled="!voiceSupported" @click="toggleMic">
-              <component :is="listening ? MicOff : Mic" :size="15" /> {{ listening ? 'Mute mic' : 'Voice on' }}
-            </button>
-            <button class="chip" :class="{ on: autoSpeak }" @click="autoSpeak = !autoSpeak; if (!autoSpeak) stopSpeaking()">
-              <component :is="autoSpeak ? Volume2 : VolumeX" :size="14" /> Speak replies
-            </button>
-            <button class="chip" :class="{ on: wakeWord }" @click="wakeWord = !wakeWord">Wake word “Jarvis”</button>
-            <button v-if="speaking" class="chip stop" @click="stopSpeaking"><Square :size="12" /> Stop</button>
-            <button class="chip" @click="showVoice = !showVoice">Voice settings</button>
-            <span class="voice-hint">Alt+J mic · Esc silence</span>
+        <section id="panel-prompts" class="card">
+          <h3>QUICK PROMPTS</h3>
+          <button class="prompt-link" @click="usePrompt('Help me plan my day with priorities and time blocks.')">› Plan my day</button>
+          <button class="prompt-link" @click="usePrompt('Explain this topic simply, then give me a practical example: ')">› Explain a topic</button>
+          <button class="prompt-link" @click="usePrompt('Help me calculate and compare these numbers: ')">› Run a calculation</button>
+        </section>
+
+        <section id="panel-system" class="card">
+          <h3>SYSTEM</h3>
+          <div class="gauges">
+            <div class="gauge" :style="{ '--p': gLatency }"><span><b>{{ lastLatency ? (lastLatency / 1000).toFixed(1) + 's' : '—' }}</b><small>REPLY</small></span></div>
+            <div class="gauge" :style="{ '--p': gLevel }"><span><b>{{ gLevel }}%</b><small>MIC</small></span></div>
+            <div class="gauge" :style="{ '--p': gMsgs }"><span><b>{{ messages.length }}</b><small>MSGS</small></span></div>
           </div>
+          <div class="rows"><div><small>UPTIME</small><b>{{ uptime }}</b></div><div><small>MODEL</small><b>{{ providerStatus }}</b></div><div><small>VOICE</small><b>{{ voiceSupported ? (listening ? 'LIVE' : 'READY') : 'N/A' }}</b></div></div>
+        </section>
+      </aside>
 
-          <div v-if="showVoice" class="voice-settings">
-            <label>VOICE
-              <select v-model="voiceName"><option v-for="v in voices" :key="v.name" :value="v.name">{{ v.name }} ({{ v.lang }})</option></select>
-            </label>
-            <label>LISTEN LANGUAGE
-              <select v-model="lang"><option value="en-US">English (US)</option><option value="en-GB">English (UK)</option><option value="en-IN">English (India)</option><option value="ta-IN">Tamil</option><option value="hi-IN">Hindi</option></select>
-            </label>
-            <label>SPEED {{ rate.toFixed(2) }}<input type="range" min="0.7" max="1.4" step="0.05" v-model.number="rate"></label>
-            <label>PITCH {{ pitch.toFixed(2) }}<input type="range" min="0.5" max="1.5" step="0.05" v-model.number="pitch"></label>
-            <button class="chip on" @click="previewVoice">Test voice</button>
-          </div>
-          <div v-if="voiceNote" class="voice-note">{{ voiceNote }}</div>
+      <!-- CENTER -->
+      <section class="col col-center">
+        <button class="reactor-wrap" :class="`orb-${orbState}`" @click="toggleMic" :title="listening ? 'Mute microphone (Alt+J)' : 'Activate voice (Alt+J)'" aria-label="Toggle voice">
+          <span class="ring ring-a"></span><span class="ring ring-b"></span><span class="ring ring-c"></span>
+          <span class="ticks"></span><span class="halo"></span>
+          <span class="reactor"><span class="reactor-inner"><component :is="listening ? Mic : AudioLines" :size="35" /></span></span>
+          <span class="bars" aria-hidden="true"><i v-for="n in 24" :key="n" :style="{ '--i': n }"></i></span>
+        </button>
+        <div class="orb-label">{{ orbLabel }}</div>
 
+        <section id="panel-chat" class="card chat">
+          <h3><span class="panel-led"></span>CONVERSATION <button class="clear-button" @click="newChat">CLEAR</button></h3>
           <div ref="chatBox" class="messages">
             <div v-for="(msg, i) in messages" :key="i" class="message-row" :class="msg.role">
               <div class="message-avatar"><AudioLines v-if="msg.role === 'assistant'" :size="16" /><span v-else>V</span></div>
@@ -550,11 +469,10 @@ onBeforeUnmount(() => {
             </div>
             <div v-if="busy" class="message-row assistant"><div class="message-avatar"><AudioLines :size="16" /></div><div class="message-body"><div class="message-meta">JARVIS <span>· PROCESSING</span></div><div class="typing"><i></i><i></i><i></i> <span>Thinking</span></div></div></div>
           </div>
-
           <div class="composer">
             <div class="composer-top"><Sparkles :size="14" /> <span>{{ interim ? 'Hearing: ' + interim : 'Ask JARVIS anything' }}</span><span class="composer-hint">ENTER TO SEND</span></div>
             <form @submit.prevent="sendMessage">
-              <textarea v-model="draft" rows="2" placeholder="Type a message, or turn on voice and say “Jarvis, …”" @keydown.enter.exact.prevent="sendMessage"></textarea>
+              <textarea v-model="draft" rows="2" placeholder="Type a message, or turn on voice and speak…" @keydown.enter.exact.prevent="sendMessage"></textarea>
               <div class="composer-bottom">
                 <div class="compose-note"><span class="tiny-lock">⌑</span> API key stays on backend · {{ cloudAllowed ? 'Cloud permitted' : 'Local only' }}</div>
                 <button class="send-button" :disabled="busy || !draft.trim()" type="submit"><span>{{ busy ? 'Working' : 'Send' }}</span><Send :size="15" /></button>
@@ -562,161 +480,44 @@ onBeforeUnmount(() => {
             </form>
           </div>
         </section>
-        <footer><span>J.A.R.V.I.S. INTERFACE <b>v0.3</b></span><span><span class="live-dot"></span> ALL SYSTEMS STANDING BY</span></footer>
       </section>
+
+      <!-- RIGHT -->
+      <aside class="col">
+        <section id="panel-voice" class="card">
+          <h3>VOICE INTERFACE</h3>
+          <div class="voice-bar">
+            <button class="mic-btn" :class="{ on: listening }" :disabled="!voiceSupported" @click="toggleMic">
+              <component :is="listening ? MicOff : Mic" :size="15" /> {{ listening ? 'Mute mic' : 'Voice on' }}
+            </button>
+            <button class="chip" :class="{ on: autoSpeak }" @click="autoSpeak = !autoSpeak; if (!autoSpeak) stopSpeaking()"><component :is="autoSpeak ? Volume2 : VolumeX" :size="14" /> Speak replies</button>
+            <button class="chip" :class="{ on: wakeWord }" @click="wakeWord = !wakeWord">Wake word “Jarvis”</button>
+            <button v-if="speaking" class="chip stop" @click="stopSpeaking"><Square :size="12" /> Stop</button>
+            <button class="chip" @click="showVoice = !showVoice">Settings</button>
+          </div>
+          <div v-if="showVoice" class="voice-settings">
+            <label>VOICE<select v-model="voiceName"><option v-for="v in voices" :key="v.name" :value="v.name">{{ v.name }} ({{ v.lang }})</option></select></label>
+            <label>LISTEN LANGUAGE<select v-model="lang"><option value="en-US">English (US)</option><option value="en-GB">English (UK)</option><option value="en-IN">English (India)</option><option value="ta-IN">Tamil</option><option value="hi-IN">Hindi</option></select></label>
+            <label>SPEED {{ rate.toFixed(2) }}<input type="range" min="0.7" max="1.4" step="0.05" v-model.number="rate"></label>
+            <label>PITCH {{ pitch.toFixed(2) }}<input type="range" min="0.5" max="1.5" step="0.05" v-model.number="pitch"></label>
+            <button class="chip on" @click="previewVoice">Test voice</button>
+          </div>
+          <div v-if="voiceNote" class="voice-note">{{ voiceNote }}</div>
+          <div class="voice-hint2">Alt+J mic · Esc silence</div>
+        </section>
+
+        <section class="card status">
+          <h3>CORE STATUS</h3>
+          <div class="metric"><span class="metric-icon"><Cpu :size="15" /></span><div><small>ACTIVE MODEL</small><strong>{{ providerStatus }}</strong></div></div>
+          <div class="metric"><span class="metric-icon"><ShieldCheck :size="15" /></span><div><small>PRIVACY DEFAULT</small><strong>Local processing</strong></div></div>
+        </section>
+      </aside>
     </main>
-    <div v-if="mobileMenu" class="scrim" @click="mobileMenu = false"></div>
-  </div>
+
+    <footer class="hud-foot">
+      <div class="big-clock">{{ bigClock }}</div>
+      <div class="power">Currently power level is <b>100</b> percent and holding steady.</div>
+      <div class="foot-r"><span class="live-dot"></span> ALL SYSTEMS STANDING BY · v0.4</div>
+    </footer>
   </div>
 </template>
-
-
-<style scoped>
-.login-screen {
-  min-height: 100vh;
-  min-height: 100dvh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  box-sizing: border-box;
-  background: #080d16;
-  color: #eaf5ff;
-}
-
-.login-card {
-  width: 100%;
-  max-width: 420px;
-  box-sizing: border-box;
-  padding: 42px 36px;
-  border: 1px solid rgba(90, 180, 255, 0.2);
-  border-radius: 18px;
-  background: #101927;
-  box-shadow: 0 25px 80px rgba(0, 0, 0, 0.45);
-}
-
-.login-logo {
-  width: 62px;
-  height: 62px;
-  margin: 0 auto 18px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #65c8ff;
-  border: 1px solid rgba(101, 200, 255, 0.4);
-  border-radius: 16px;
-}
-
-.login-brand {
-  text-align: center;
-  color: #eaf5ff;
-  font-size: 25px;
-  font-weight: 700;
-  letter-spacing: 5px;
-}
-
-.login-subtitle {
-  text-align: center;
-  color: #6f91aa;
-  font-size: 9px;
-  letter-spacing: 2px;
-  margin-top: 8px;
-}
-
-.login-heading {
-  color: #f0f6ff;
-  font-size: 23px;
-  font-weight: 600;
-  margin-top: 38px;
-}
-
-.login-description {
-  color: #91a4b9;
-  font-size: 13px;
-  margin: 8px 0 28px;
-}
-
-.login-label {
-  display: block;
-  color: #91b5ce;
-  font-size: 10px;
-  letter-spacing: 1.5px;
-  margin: 20px 0 9px;
-}
-
-.login-input {
-  box-sizing: border-box;
-  width: 100%;
-  padding: 14px;
-  border: 1px solid #293e52;
-  border-radius: 8px;
-  background: #0a1320;
-  color: #fff;
-  outline: none;
-}
-
-.login-input:focus {
-  border-color: #55baff;
-  box-shadow: 0 0 0 3px rgba(85, 186, 255, 0.1);
-}
-
-.login-submit {
-  width: 100%;
-  margin-top: 26px;
-  padding: 15px;
-  border: 0;
-  border-radius: 8px;
-  background: #168bd1;
-  color: #fff;
-  font-weight: 700;
-  letter-spacing: 1px;
-  cursor: pointer;
-}
-
-.login-submit:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.login-error {
-  color: #ff8585;
-  font-size: 13px;
-  margin-top: 15px;
-}
-
-.login-security {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 8px;
-  margin-top: 25px;
-  color: #7195aa;
-  font-size: 11px;
-}
-
-.logout-button {
-  margin-left: 12px;
-  padding: 7px 11px;
-  border: 1px solid rgba(120, 170, 205, 0.3);
-  border-radius: 7px;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-}
-
-.logout-button:hover {
-  border-color: #65c8ff;
-  color: #65c8ff;
-}
-
-@media (max-width: 480px) {
-  .login-card {
-    padding: 32px 22px;
-  }
-  .logout-button {
-    margin-left: 6px;
-    padding: 6px 8px;
-  }
-}
-</style>
