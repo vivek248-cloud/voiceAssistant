@@ -1,3 +1,4 @@
+import { authenticatedFetch } from './api'
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Activity, AudioLines, Bot, ChevronDown, Cpu, Menu, Mic, MicOff, Plus, Send, ShieldCheck, Sparkles, Square, Volume2, VolumeX, Wifi, X, Cloud } from 'lucide-vue-next'
@@ -96,10 +97,16 @@ async function sendMessage() {
   scrollDown()
   const t0 = performance.now()
   try {
-    const res = await fetch('http://127.0.0.1:8000/api/chat/', {
+    const res = await authenticatedFetch('/api/chat/', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text, history, privacy_mode: privacyMode.value, allow_cloud: cloudAllowed.value })
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        messages,
+        privacy_mode: privacyMode,
+        allow_cloud: allowCloud
+      })
     })
     const data = await res.json()
     if (!res.ok) throw new Error(data.error || 'Request failed')
