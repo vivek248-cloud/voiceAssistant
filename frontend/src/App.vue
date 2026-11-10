@@ -1,14 +1,8 @@
 <script setup>
-import { computed, nextTick, ref } from 'vue'
-import { login, logout, authenticatedFetch } from './api'
-import { Activity, AudioLines, Bot, ChevronDown, Cpu, Menu, Plus, Send, ShieldCheck, Sparkles, Wifi, X, Cloud, Monitor, Mic, MicOff, Volume2, Square } from 'lucide-vue-next'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { Activity, AudioLines, Bot, ChevronDown, Cpu, Menu, Mic, MicOff, Plus, Send, ShieldCheck, Sparkles, Square, Volume2, VolumeX, Wifi, X, Cloud } from 'lucide-vue-next'
 
-const isLoggedIn = ref(false)
-const loginUsername = ref('')
-const loginPassword = ref('')
-const loginBusy = ref(false)
-const loginError = ref('')
-
+/* ---------- state ---------- */
 const draft = ref('')
 const busy = ref(false)
 const mobileMenu = ref(false)
@@ -16,309 +10,325 @@ const privacyMode = ref('local')
 const allowCloud = ref(false)
 const providerStatus = ref('Local AI · Qwen')
 const messages = ref([
-  { role: 'assistant', content: "Good day. JARVIS systems are online. How may I assist you?", provider: 'local', model: 'qwen2.5:1.5b-instruct' }
+  { role: 'assistant', content: 'Good day. JARVIS systems are online. How may I assist you?', provider: 'local', model: 'qwen2.5:1.5b-instruct' }
 ])
 const chatBox = ref(null)
-
-const recognition = ref(null)
-const isListening = ref(false)
-const isSpeaking = ref(false)
-const voiceMode = ref(false)
-const voiceError = ref('')
-const pendingVoiceResponse = ref(false)
-
-function unlockSpeech() {
-  if (!('speechSynthesis' in window)) return
-
-  const utterance = new SpeechSynthesisUtterance(' ')
-  utterance.lang = 'en-IN'
-  utterance.volume = 0
-  window.speechSynthesis.speak(utterance)
-}
-
-function stopSpeaking() {
-  if ('speechSynthesis' in window) {
-    window.speechSynthesis.cancel()
-  }
-  isSpeaking.value = false
-}
-
-function speak(text) {
-  if (!text || !('speechSynthesis' in window)) return
-
-  window.speechSynthesis.cancel()
-
-  const utterance = new SpeechSynthesisUtterance(text)
-  utterance.lang = 'en-IN'
-  utterance.rate = 1
-  utterance.pitch = 1
-  utterance.volume = 1
-
-  utterance.onstart = () => {
-    isSpeaking.value = true
-  }
-
-  utterance.onend = () => {
-    isSpeaking.value = false
-  }
-
-  utterance.onerror = () => {
-    isSpeaking.value = false
-  }
-
-  setTimeout(() => {
-    window.speechSynthesis.speak(utterance)
-  }, 0)
-}
-
-function stopVoice() {
-  if (recognition.value) {
-    recognition.value.onend = null
-    recognition.value.abort()
-    recognition.value = null
-  }
-
-  isListening.value = false
-  voiceMode.value = false
-  pendingVoiceResponse.value = false
-  voiceError.value = ''
-  stopSpeaking()
-}
-
-function startVoice() {
-  const SpeechRecognition =
-    window.SpeechRecognition || window.webkitSpeechRecognition
-
-  if (!SpeechRecognition) {
-    voiceError.value = 'Speech recognition is not supported by this browser. Try Google Chrome.'
-    return
-  }
-
-  if (isListening.value) return
-
-  stopSpeaking()
-  voiceError.value = ''
-  voiceMode.value = true
-  unlockSpeech()
-
-  const instance = new SpeechRecognition()
-  recognition.value = instance
-
-  instance.lang = 'en-IN'
-  instance.continuous = false
-  instance.interimResults = false
-  instance.maxAlternatives = 1
-
-  instance.onstart = () => {
-    isListening.value = true
-  }
-
-  instance.onresult = (event) => {
-    const transcript = event.results?.[0]?.[0]?.transcript?.trim()
-
-    if (transcript) {
-      pendingVoiceResponse.value = true
-      draft.value = transcript
-      nextTick(() => sendMessage())
-    }
-  }
-
-  instance.onerror = (event) => {
-    isListening.value = false
-
-    if (event.error !== 'aborted' && event.error !== 'no-speech') {
-      voiceError.value = `Microphone error: ${event.error}`
-    } else if (event.error === 'no-speech') {
-      voiceError.value = 'No speech detected. Please try again.'
-    }
-  }
-
-  instance.onend = () => {
-    isListening.value = false
-    if (recognition.value === instance) {
-      recognition.value = null
-    }
-  }
-
-  try {
-    instance.start()
-  } catch (error) {
-    isListening.value = false
-    recognition.value = null
-    voiceError.value = 'Could not start the microphone. Please try again.'
-  }
-}
-const clock = ref(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
+const clock = ref('')
+const booting = ref(true)
+const bootLines = ref([])
+const lastLatency = ref(null)
+const startedAt = Date.now()
+const uptime = ref('00:00')
 const cloudAllowed = computed(() => privacyMode.value !== 'local' && allowCloud.value)
 
+/* ---------- voice state ---------- */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition
+const voiceSupported = !!SR && 'speechSynthesis' in window
+const listening = ref(false)
+const speaking = ref(false)
+const interim = ref('')
+const voiceNote = ref('')
+const autoSpeak = ref(true)
+const wakeWord = ref(false)
+const showVoice = ref(false)
+const voices = ref([])
+const voiceName = ref(localStorage.getItem('jarvis.voice') || '')
+const rate = ref(Number(localStorage.getItem('jarvis.rate')) || 1)
+const pitch = ref(Number(localStorage.getItem('jarvis.pitch')) || 0.9)
+const lang = ref(localStorage.getItem('jarvis.lang') || 'en-US')
+const level = ref(0)
 
-async function handleLogin() {
-  if (loginBusy.value) return
+const orbState = computed(() =>
+  busy.value ? 'thinking' : speaking.value ? 'speaking' : listening.value ? 'listening' : 'idle')
+const orbLabel = computed(() => ({
+  thinking: 'PROCESSING', speaking: 'SPEAKING', listening: wakeWord.value ? 'AWAITING "JARVIS"' : 'LISTENING', idle: 'STANDING BY'
+}[orbState.value]))
 
-  loginError.value = ''
-  loginBusy.value = true
+let recognition = null
+let micStream = null
+let audioCtx = null
+let rafId = 0
+let pulseTimer = 0
+let clockTimer = 0
+let wantListening = false
+let levelTimer = 0
+let speakToken = 0
 
-  try {
-    await login(loginUsername.value.trim(), loginPassword.value)
-    isLoggedIn.value = true
-    loginPassword.value = ''
-    loginError.value = ''
-  } catch (error) {
-    loginError.value = error.message || 'Login failed. Please try again.'
-  } finally {
-    loginBusy.value = false
-  }
-}
-
-function handleLogout() {
-  stopVoice()
-  logout()
-  isLoggedIn.value = false
-  loginPassword.value = ''
-  loginError.value = ''
-  draft.value = ''
-  mobileMenu.value = false
-  messages.value = [
-    { role: 'assistant', content: 'Good day. JARVIS systems are online. How may I assist you?', provider: 'local', model: 'qwen2.5:1.5b-instruct' }
-  ]
-}
+/* ---------- helpers ---------- */
+const tier = () => (privacyMode.value === 'local' || !allowCloud.value)
+  ? 'Local AI · Qwen'
+  : privacyMode.value === 'cloud' ? 'Cloud AI · NVIDIA' : 'Hybrid AI · NVIDIA + Qwen'
 
 function newChat() {
+  stopSpeaking()
   messages.value = [{ role: 'assistant', content: 'New session initiated. What would you like to work on?', provider: 'local' }]
 }
 function changePrivacyMode() {
   if (privacyMode.value === 'local') allowCloud.value = false
-  providerStatus.value = privacyMode.value === 'local' || !allowCloud.value
-    ? 'Local AI · Qwen'
-    : privacyMode.value === 'cloud' ? 'Cloud AI · NVIDIA' : 'Hybrid AI · NVIDIA + Qwen'
+  providerStatus.value = tier()
 }
+function usePrompt(p) { draft.value = p }
+function providerLabel(p) {
+  return p === 'nvidia' ? 'NVIDIA CLOUD' : p === 'local_fallback' ? 'LOCAL FALLBACK' : p === 'local' ? 'LOCAL QWEN' : 'AI SYSTEM'
+}
+function tick() {
+  clock.value = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  const s = Math.floor((Date.now() - startedAt) / 1000)
+  uptime.value = `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
+}
+async function scrollDown() {
+  await nextTick()
+  if (chatBox.value) chatBox.value.scrollTop = chatBox.value.scrollHeight
+}
+
+/* ---------- chat ---------- */
 async function sendMessage() {
   const text = draft.value.trim()
   if (!text || busy.value) return
-
-  const speakResponse = pendingVoiceResponse.value && voiceMode.value
-  pendingVoiceResponse.value = false
-
-  if (privacyMode.value !== 'local' && !allowCloud.value) {
-    providerStatus.value = 'Local only · Cloud permission is off'
-  } else {
-    providerStatus.value = privacyMode.value === 'local'
-      ? 'Local AI · Qwen'
-      : privacyMode.value === 'cloud' ? 'Cloud AI · NVIDIA' : 'Hybrid AI · NVIDIA + Qwen'
-  }
+  providerStatus.value = (privacyMode.value !== 'local' && !allowCloud.value) ? 'Local only · Cloud permission is off' : tier()
 
   const history = messages.value.slice(-12).map(({ role, content }) => ({ role, content }))
   messages.value.push({ role: 'user', content: text })
   draft.value = ''
+  interim.value = ''
   busy.value = true
-  await nextTick()
+  stopSpeaking()
+  scrollDown()
+  const t0 = performance.now()
   try {
-    const res = await authenticatedFetch('/api/chat/', {
+    const res = await fetch('http://127.0.0.1:8000/api/chat/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        message: text,
-        history,
-        privacy_mode: privacyMode.value,
-        allow_cloud: cloudAllowed.value
-      })
+      body: JSON.stringify({ message: text, history, privacy_mode: privacyMode.value, allow_cloud: cloudAllowed.value })
     })
     const data = await res.json()
     if (!res.ok) throw new Error(data.error || 'Request failed')
-    messages.value.push({
-      role: 'assistant',
-      content: data.answer,
-      provider: data.provider,
-      model: data.model
-    })
-
-    if (speakResponse && voiceMode.value) {
-      speak(data.answer)
-    }
-    providerStatus.value = data.provider === 'nvidia'
-      ? 'NVIDIA Nemotron · Cloud'
-      : data.provider === 'local_fallback'
-        ? 'Qwen · Local fallback'
-        : 'Qwen · Local'
+    lastLatency.value = Math.round(performance.now() - t0)
+    messages.value.push({ role: 'assistant', content: data.answer, provider: data.provider, model: data.model })
+    providerStatus.value = data.provider === 'nvidia' ? 'NVIDIA Nemotron · Cloud'
+      : data.provider === 'local_fallback' ? 'Qwen · Local fallback' : 'Qwen · Local'
+    if (autoSpeak.value && voiceSupported) speak(data.answer)
   } catch (e) {
-    if (e.message?.toLowerCase().includes('session has expired')) {
-      handleLogout()
-      loginError.value = 'Your session expired. Please log in again.'
-    } else {
-      messages.value.push({ role: 'assistant', content: `Connection issue: ${e.message}`, provider: 'error' })
-    }
+    messages.value.push({ role: 'assistant', content: `Connection issue: ${e.message}`, provider: 'error' })
+    if (autoSpeak.value && voiceSupported) speak('I am having trouble reaching my core systems, sir.')
   } finally {
     busy.value = false
-    await nextTick()
-    if (chatBox.value) chatBox.value.scrollTop = chatBox.value.scrollHeight
+    scrollDown()
+    if (wantListening && !speaking.value) resumeRecognition()
   }
 }
-function usePrompt(prompt) {
-  draft.value = prompt
+
+/* ---------- text to speech ---------- */
+function loadVoices() {
+  const list = speechSynthesis.getVoices().filter(v => v.lang.startsWith('en'))
+  voices.value = list
+  if (!voiceName.value || !list.some(v => v.name === voiceName.value)) {
+    const pref = ['Google UK English Male', 'Daniel', 'Microsoft Ryan', 'Microsoft George', 'Arthur', 'Oliver']
+    const found = pref.map(p => list.find(v => v.name.includes(p))).find(Boolean) || list.find(v => v.lang === 'en-GB') || list[0]
+    voiceName.value = found ? found.name : ''
+  }
 }
-function providerLabel(provider) {
-  if (provider === 'nvidia') return 'NVIDIA CLOUD'
-  if (provider === 'local_fallback') return 'LOCAL FALLBACK'
-  if (provider === 'local') return 'LOCAL QWEN'
-  return 'AI SYSTEM'
+function cleanForSpeech(t) {
+  return t
+    .replace(/```[\s\S]*?```/g, ' code block omitted. ')
+    .replace(/`([^`]*)`/g, '$1')
+    .replace(/[*_#>~]+/g, '')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/https?:\/\/\S+/g, 'link')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
+function speak(text) {
+  if (!voiceSupported) return
+  const chunks = cleanForSpeech(text).match(/[^.!?\n]+[.!?]*/g) || []
+  if (!chunks.length) return
+  const token = ++speakToken
+  speechSynthesis.cancel()
+  pauseRecognition()
+  speaking.value = true
+  startPulse()
+  const voice = voices.value.find(v => v.name === voiceName.value)
+  const total = chunks.join(' ').length
+  // Chrome drops speak() if it is called right after cancel(), so wait a moment
+  setTimeout(() => {
+    if (token !== speakToken) return
+    chunks.forEach((c, i) => {
+      const u = new SpeechSynthesisUtterance(c.trim())
+      if (voice) u.voice = voice
+      u.lang = voice ? voice.lang : 'en-GB'
+      u.rate = rate.value
+      u.pitch = pitch.value
+      if (i === chunks.length - 1) {
+        u.onend = () => { if (token === speakToken) finishSpeaking() }
+        u.onerror = (e) => {
+          if (token !== speakToken) return
+          if (e.error === 'not-allowed') voiceNote.value = 'Browser blocked speech. Click anywhere on the page once, then try again.'
+          finishSpeaking()
+        }
+      }
+      speechSynthesis.speak(u)
+    })
+  }, 120)
+  // watchdog: some voices never fire onend
+  setTimeout(() => { if (token === speakToken && speaking.value) finishSpeaking() }, total * 120 / rate.value + 4000)
+}
+function finishSpeaking() {
+  speaking.value = false
+  stopPulse()
+  if (wantListening) setTimeout(resumeRecognition, 400)
+}
+function stopSpeaking() {
+  if (!voiceSupported) return
+  speakToken++
+  speechSynthesis.cancel()
+  if (speaking.value) finishSpeaking()
+}
+function startPulse() {
+  stopPulse()
+  pulseTimer = setInterval(() => { level.value = 0.25 + Math.random() * 0.75 }, 110)
+}
+function stopPulse() { clearInterval(pulseTimer); if (!listening.value) level.value = 0 }
+function previewVoice() { speak('All systems are online and operating at full capacity, sir.') }
+
+/* ---------- speech recognition ---------- */
+function buildRecognition() {
+  const r = new SR()
+  r.lang = lang.value
+  r.continuous = true
+  r.interimResults = true
+  r.onstart = () => { voiceNote.value = 'Listening… speak now' }
+  r.onspeechstart = () => { voiceNote.value = '' }
+  r.onresult = (e) => {
+    let live = ''
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const res = e.results[i]
+      if (res.isFinal) handleVoice(res[0].transcript)
+      else live += res[0].transcript
+    }
+    interim.value = live
+    level.value = 0.3 + Math.random() * 0.7
+    clearTimeout(levelTimer)
+    levelTimer = setTimeout(() => { if (!speaking.value) level.value = 0 }, 400)
+  }
+  r.onerror = (e) => {
+    const fatal = {
+      'not-allowed': 'Microphone blocked. Click the lock icon in the address bar, allow Microphone, then press Voice on again.',
+      'service-not-allowed': 'Speech service blocked. Use Chrome or Edge; Brave and Firefox do not support voice input.',
+      'audio-capture': 'No microphone found. Check your system sound input settings.',
+      'network': 'Speech service unreachable. Voice input needs internet and works in Chrome or Edge only (not Brave).',
+      'language-not-supported': 'That listen language is not supported. Pick English (US) in Voice settings.'
+    }[e.error]
+    if (fatal) { stopListening(); voiceNote.value = fatal }
+  }
+  r.onend = () => { if (wantListening && !speaking.value) setTimeout(resumeRecognition, 250) }
+  return r
+}
+function resumeRecognition() {
+  if (!wantListening || speaking.value) return
+  try { recognition && recognition.start() } catch { /* already started */ }
+}
+function pauseRecognition() {
+  try { recognition && recognition.stop() } catch { /* not running */ }
+}
+function handleVoice(raw) {
+  const text = raw.trim()
+  if (!text) return
+  if (/^(stop|be quiet|silence|shut up)\b/i.test(text)) { stopSpeaking(); return }
+  if (wakeWord.value) {
+    const m = text.match(/^(?:hey|ok|okay|hi)?[\s,]*(?:jarvis|jarvish|travis|service)\b[\s,.:!-]*(.*)$/i)
+    if (!m) { voiceNote.value = `Ignored (no wake word): "${text.slice(0, 40)}"`; return }
+    const cmd = m[1].trim()
+    if (!cmd) { if (autoSpeak.value) speak('Yes, sir?'); return }
+    voiceNote.value = ''
+    draft.value = cmd
+  } else {
+    voiceNote.value = ''
+    draft.value = text
+  }
+  sendMessage()
+}
+async function startLevelMeter() {
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+    const an = audioCtx.createAnalyser()
+    an.fftSize = 256
+    audioCtx.createMediaStreamSource(micStream).connect(an)
+    const buf = new Uint8Array(an.frequencyBinCount)
+    const loop = () => {
+      an.getByteFrequencyData(buf)
+      const avg = buf.reduce((a, b) => a + b, 0) / buf.length / 140
+      if (!speaking.value) level.value = Math.min(1, avg * 1.8)
+      rafId = requestAnimationFrame(loop)
+    }
+    loop()
+  } catch { /* meter is optional */ }
+}
+function stopLevelMeter() {
+  cancelAnimationFrame(rafId)
+  micStream && micStream.getTracks().forEach(t => t.stop())
+  audioCtx && audioCtx.close().catch(() => {})
+  micStream = audioCtx = null
+  if (!speaking.value) level.value = 0
+}
+async function startListening() {
+  if (!voiceSupported) { voiceNote.value = 'Voice input is not supported in this browser. Open the app in Chrome or Edge (not Brave or Firefox).'; return }
+  wantListening = true
+  listening.value = true
+  voiceNote.value = ''
+  recognition = buildRecognition()
+  resumeRecognition()
+}
+function stopListening() {
+  wantListening = false
+  listening.value = false
+  interim.value = ''
+  pauseRecognition()
+  stopLevelMeter()
+}
+function toggleMic() { listening.value ? stopListening() : startListening() }
+function onHotkey(e) {
+  if (e.altKey && e.code === 'KeyJ') { e.preventDefault(); toggleMic() }
+  if (e.key === 'Escape') stopSpeaking()
+}
+
+watch([voiceName, rate, pitch, lang], () => {
+  localStorage.setItem('jarvis.voice', voiceName.value)
+  localStorage.setItem('jarvis.rate', rate.value)
+  localStorage.setItem('jarvis.pitch', pitch.value)
+  localStorage.setItem('jarvis.lang', lang.value)
+  if (listening.value) { stopListening(); startListening() }
+})
+
+/* ---------- lifecycle ---------- */
+onMounted(() => {
+  tick(); clockTimer = setInterval(tick, 1000)
+  window.addEventListener('keydown', onHotkey)
+  if (voiceSupported) { loadVoices(); speechSynthesis.onvoiceschanged = loadVoices }
+  const seq = ['INITIALIZING CORE', 'LOADING LANGUAGE MODEL', 'CALIBRATING VOICE INTERFACE', 'PRIVACY GATE ARMED', 'ALL SYSTEMS NOMINAL']
+  seq.forEach((l, i) => setTimeout(() => bootLines.value.push(l), 260 * (i + 1)))
+  setTimeout(() => { booting.value = false }, 260 * seq.length + 600)
+})
+onBeforeUnmount(() => {
+  clearInterval(clockTimer); stopPulse()
+  window.removeEventListener('keydown', onHotkey)
+  stopListening(); stopSpeaking()
+})
 </script>
 
 <template>
-  <section v-if="!isLoggedIn" class="login-screen">
-    <div class="login-card">
-      <div class="login-brand">
-        <div class="brand-mark"><AudioLines :size="25" /></div>
+  <div class="shell" :class="`state-${orbState}`" :style="{ '--lvl': level }">
+    <div class="hud-grid" aria-hidden="true"></div>
+    <div class="scanline" aria-hidden="true"></div>
+
+    <transition name="boot">
+      <div v-if="booting" class="boot">
+        <div class="boot-reactor"><AudioLines :size="30" /></div>
+        <div class="boot-title">J.A.R.V.I.S.</div>
+        <div class="boot-lines"><div v-for="l in bootLines" :key="l">&gt; {{ l }}</div></div>
       </div>
+    </transition>
 
-      <div class="login-heading">J.A.R.V.I.S.</div>
-      <div class="login-subtitle">PERSONAL INTELLIGENCE SYSTEM</div>
-
-      <p class="login-description">
-        Authentication required. Sign in to access your private JARVIS workspace.
-      </p>
-
-      <div v-if="loginError" class="login-error">{{ loginError }}</div>
-
-      <form @submit.prevent="handleLogin">
-        <label class="login-field">
-          USERNAME
-          <input
-            v-model="loginUsername"
-            type="text"
-            placeholder="Enter your username"
-            autocomplete="username"
-            required
-            :disabled="loginBusy"
-          >
-        </label>
-
-        <label class="login-field">
-          PASSWORD
-          <input
-            v-model="loginPassword"
-            type="password"
-            placeholder="Enter your password"
-            autocomplete="current-password"
-            required
-            :disabled="loginBusy"
-          >
-        </label>
-
-        <button class="login-button" type="submit" :disabled="loginBusy">
-          <span>{{ loginBusy ? 'AUTHENTICATING...' : 'ACCESS JARVIS' }}</span>
-          <AudioLines :size="16" />
-        </button>
-      </form>
-
-      <div class="login-footer">
-        <span class="live-dot"></span> SECURE AUTHENTICATION GATEWAY
-      </div>
-    </div>
-  </section>
-
-  <template v-else>
-  <div class="shell">
     <aside class="sidebar" :class="{ 'sidebar-open': mobileMenu }">
       <div class="brand">
         <div class="brand-mark"><AudioLines :size="22" /></div>
@@ -326,20 +336,27 @@ function providerLabel(provider) {
         <button class="icon-button mobile-close" @click="mobileMenu = false"><X :size="18" /></button>
       </div>
       <button class="new-chat" @click="newChat"><Plus :size="17" /> New conversation</button>
+
       <div class="nav-label">SYSTEM</div>
       <div class="nav-item active"><Bot :size="17" /> Assistant <span class="nav-dot"></span></div>
       <div class="nav-item muted"><Activity :size="17" /> Activity monitor <span class="soon">SOON</span></div>
       <div class="nav-item muted"><ShieldCheck :size="17" /> Personal memory <span class="soon">SOON</span></div>
+
+      <div class="nav-label tools-label">TELEMETRY</div>
+      <div class="telemetry">
+        <div><small>UPTIME</small><b>{{ uptime }}</b></div>
+        <div><small>LAST REPLY</small><b>{{ lastLatency ? (lastLatency / 1000).toFixed(1) + 's' : '—' }}</b></div>
+        <div><small>MESSAGES</small><b>{{ messages.length }}</b></div>
+        <div><small>VOICE</small><b>{{ voiceSupported ? (listening ? 'LIVE' : 'READY') : 'N/A' }}</b></div>
+      </div>
+
       <div class="nav-label tools-label">QUICK PROMPTS</div>
       <button class="prompt-link" @click="usePrompt('Help me plan my day with priorities and time blocks.')">Plan my day</button>
       <button class="prompt-link" @click="usePrompt('Explain this topic simply, then give me a practical example: ')">Explain a topic</button>
       <button class="prompt-link" @click="usePrompt('Help me calculate and compare these numbers: ')">Run a calculation</button>
+
       <div class="sidebar-bottom">
-        <div class="profile">
-          <div class="avatar">V</div>
-          <div><strong>Local operator</strong><small>Private workspace</small></div>
-          <button class="logout-button" type="button" @click="handleLogout">Logout</button>
-        </div>
+        <div class="profile"><div class="avatar">V</div><div><strong>Local operator</strong><small>Private workspace</small></div><ChevronDown :size="16" class="profile-chevron" /></div>
       </div>
     </aside>
 
@@ -353,12 +370,19 @@ function providerLabel(provider) {
       <section class="content">
         <div class="hero">
           <div class="eyebrow"><span class="eyebrow-line"></span> PERSONAL AI INTERFACE <span class="eyebrow-line"></span></div>
-          <div class="reactor-wrap">
-            <div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="orbit orbit-three"></div>
-            <div class="reactor"><div class="reactor-inner"><AudioLines :size="35" /></div></div>
-          </div>
+
+          <button class="reactor-wrap" :class="`orb-${orbState}`" @click="toggleMic" :title="listening ? 'Mute microphone (Alt+J)' : 'Activate voice (Alt+J)'" aria-label="Toggle voice">
+            <span class="ring ring-a"></span><span class="ring ring-b"></span><span class="ring ring-c"></span>
+            <span class="ticks"></span>
+            <span class="halo"></span>
+            <span class="reactor"><span class="reactor-inner"><component :is="listening ? Mic : AudioLines" :size="35" /></span></span>
+            <span class="bars" aria-hidden="true"><i v-for="n in 24" :key="n" :style="{ '--i': n }"></i></span>
+          </button>
+
+          <div class="orb-label">{{ orbLabel }}</div>
           <h1>At your service<span>.</span></h1>
-          <p class="hero-copy">Intelligence at your fingertips. What shall we accomplish today?</p>
+          <p class="hero-copy">{{ listening && wakeWord ? 'Say “Jarvis” followed by your request.' : 'Intelligence at your fingertips. What shall we accomplish today?' }}</p>
+
           <div class="metrics">
             <div class="metric"><span class="metric-icon"><Cpu :size="15" /></span><div><small>ACTIVE MODEL</small><strong>{{ providerStatus }}</strong></div></div>
             <div class="metric"><span class="metric-icon"><ShieldCheck :size="15" /></span><div><small>PRIVACY DEFAULT</small><strong>Local processing</strong></div></div>
@@ -367,7 +391,9 @@ function providerLabel(provider) {
         </div>
 
         <section class="chat-panel">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
           <div class="panel-heading"><div><span class="panel-led"></span><strong>Conversation</strong><small> · Secure model gateway</small></div><button class="clear-button" @click="newChat">Clear session</button></div>
+
           <div class="privacy-controls">
             <div class="privacy-heading"><ShieldCheck :size="16" /><div><strong>AI routing & privacy</strong><small>Local is the default. Cloud is opt-in.</small></div></div>
             <label class="mode-field">AI MODE
@@ -381,44 +407,64 @@ function providerLabel(provider) {
               <input v-model="allowCloud" type="checkbox" :disabled="privacyMode === 'local'" @change="changePrivacyMode">
               <span><b>Allow cloud processing</b><small v-if="privacyMode === 'local'">Switch to Hybrid or Cloud to enable this.</small><small v-else>When enabled, your message and included history may be sent to NVIDIA.</small></span>
             </label>
-            <div class="privacy-warning" v-if="privacyMode !== 'local' && !allowCloud"> <ShieldCheck :size="14" /> Cloud permission is off. Requests will be processed on your private VPS using Ollama.</div>
+            <div class="privacy-warning" v-if="privacyMode !== 'local' && !allowCloud"><ShieldCheck :size="14" /> Cloud permission is off. Requests will stay on your PC.</div>
             <div class="privacy-warning cloud-on" v-else-if="allowCloud"><Cloud :size="14" /> Cloud permission enabled. Avoid sending sensitive information.</div>
           </div>
+
+          <div class="voice-bar">
+            <button class="mic-btn" :class="{ on: listening }" :disabled="!voiceSupported" @click="toggleMic">
+              <component :is="listening ? MicOff : Mic" :size="15" /> {{ listening ? 'Mute mic' : 'Voice on' }}
+            </button>
+            <button class="chip" :class="{ on: autoSpeak }" @click="autoSpeak = !autoSpeak; if (!autoSpeak) stopSpeaking()">
+              <component :is="autoSpeak ? Volume2 : VolumeX" :size="14" /> Speak replies
+            </button>
+            <button class="chip" :class="{ on: wakeWord }" @click="wakeWord = !wakeWord">Wake word “Jarvis”</button>
+            <button v-if="speaking" class="chip stop" @click="stopSpeaking"><Square :size="12" /> Stop</button>
+            <button class="chip" @click="showVoice = !showVoice">Voice settings</button>
+            <span class="voice-hint">Alt+J mic · Esc silence</span>
+          </div>
+
+          <div v-if="showVoice" class="voice-settings">
+            <label>VOICE
+              <select v-model="voiceName"><option v-for="v in voices" :key="v.name" :value="v.name">{{ v.name }} ({{ v.lang }})</option></select>
+            </label>
+            <label>LISTEN LANGUAGE
+              <select v-model="lang"><option value="en-US">English (US)</option><option value="en-GB">English (UK)</option><option value="en-IN">English (India)</option><option value="ta-IN">Tamil</option><option value="hi-IN">Hindi</option></select>
+            </label>
+            <label>SPEED {{ rate.toFixed(2) }}<input type="range" min="0.7" max="1.4" step="0.05" v-model.number="rate"></label>
+            <label>PITCH {{ pitch.toFixed(2) }}<input type="range" min="0.5" max="1.5" step="0.05" v-model.number="pitch"></label>
+            <button class="chip on" @click="previewVoice">Test voice</button>
+          </div>
+          <div v-if="voiceNote" class="voice-note">{{ voiceNote }}</div>
+
           <div ref="chatBox" class="messages">
             <div v-for="(msg, i) in messages" :key="i" class="message-row" :class="msg.role">
               <div class="message-avatar"><AudioLines v-if="msg.role === 'assistant'" :size="16" /><span v-else>V</span></div>
-              <div class="message-body"><div class="message-meta">{{ msg.role === 'assistant' ? 'JARVIS' : 'YOU' }} <span>· {{ msg.role === 'assistant' ? providerLabel(msg.provider) : 'OPERATOR' }}</span></div><div class="message-text">{{ msg.content }}</div><div v-if="msg.model" class="model-stamp">{{ msg.model }}</div></div>
+              <div class="message-body">
+                <div class="message-meta">{{ msg.role === 'assistant' ? 'JARVIS' : 'YOU' }} <span>· {{ msg.role === 'assistant' ? providerLabel(msg.provider) : 'OPERATOR' }}</span>
+                  <button v-if="msg.role === 'assistant' && voiceSupported" class="replay" @click="speak(msg.content)" title="Read aloud"><Volume2 :size="12" /></button>
+                </div>
+                <div class="message-text">{{ msg.content }}</div>
+                <div v-if="msg.model" class="model-stamp">{{ msg.model }}</div>
+              </div>
             </div>
             <div v-if="busy" class="message-row assistant"><div class="message-avatar"><AudioLines :size="16" /></div><div class="message-body"><div class="message-meta">JARVIS <span>· PROCESSING</span></div><div class="typing"><i></i><i></i><i></i> <span>Thinking</span></div></div></div>
           </div>
+
           <div class="composer">
-            <div class="composer-top"><Sparkles :size="14" /> <span>Ask JARVIS anything</span><span class="composer-hint">ENTER TO SEND</span></div>
-            <div v-if="isListening || isSpeaking || voiceError" class="voice-status" :class="{ 'voice-error': voiceError }">
-              <span v-if="isListening">Listening... Speak now.</span>
-              <span v-else-if="isSpeaking">JARVIS is speaking...</span>
-              <span v-else>{{ voiceError }}</span>
-            </div>
+            <div class="composer-top"><Sparkles :size="14" /> <span>{{ interim ? 'Hearing: ' + interim : 'Ask JARVIS anything' }}</span><span class="composer-hint">ENTER TO SEND</span></div>
             <form @submit.prevent="sendMessage">
-              <textarea v-model="draft" rows="2" placeholder="Type a message or ask a question..." @keydown.enter.exact.prevent="sendMessage"></textarea>
+              <textarea v-model="draft" rows="2" placeholder="Type a message, or turn on voice and say “Jarvis, …”" @keydown.enter.exact.prevent="sendMessage"></textarea>
               <div class="composer-bottom">
                 <div class="compose-note"><span class="tiny-lock">⌑</span> API key stays on backend · {{ cloudAllowed ? 'Cloud permitted' : 'Local only' }}</div>
-                <div class="composer-actions">
-                  <button class="voice-button" type="button" @click="startVoice" :disabled="busy || isListening" title="Speak to JARVIS" aria-label="Start voice input">
-                    <Mic :size="16" />
-                  </button>
-                  <button v-if="voiceMode || isSpeaking" class="voice-stop-button" type="button" @click="stopVoice" title="Stop voice session" aria-label="Stop voice session">
-                    <Square :size="14" />
-                  </button>
-                  <button class="send-button" :disabled="busy || !draft.trim()" type="submit"><span>{{ busy ? 'Working' : 'Send' }}</span><Send :size="15" /></button>
-                </div>
+                <button class="send-button" :disabled="busy || !draft.trim()" type="submit"><span>{{ busy ? 'Working' : 'Send' }}</span><Send :size="15" /></button>
               </div>
             </form>
           </div>
         </section>
-        <footer><span>J.A.R.V.I.S. INTERFACE <b>v0.2</b></span><span><span class="live-dot"></span> ALL SYSTEMS STANDING BY</span></footer>
+        <footer><span>J.A.R.V.I.S. INTERFACE <b>v0.3</b></span><span><span class="live-dot"></span> ALL SYSTEMS STANDING BY</span></footer>
       </section>
     </main>
     <div v-if="mobileMenu" class="scrim" @click="mobileMenu = false"></div>
   </div>
-  </template>
 </template>
