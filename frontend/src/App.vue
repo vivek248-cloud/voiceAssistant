@@ -1,6 +1,14 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { login, logout, authenticatedFetch } from './api'
 import { Activity, AudioLines, Bot, Cloud, Cpu, Maximize, Mic, MicOff, Plus, Send, ShieldCheck, Sparkles, Square, Volume2, VolumeX, X } from 'lucide-vue-next'
+
+/* ---------- authentication ---------- */
+const isLoggedIn = ref(false)
+const loginUsername = ref('')
+const loginPassword = ref('')
+const loginBusy = ref(false)
+const loginError = ref('')
 
 /* ---------- state ---------- */
 const draft = ref('')
@@ -82,6 +90,48 @@ async function scrollDown() {
   if (chatBox.value) chatBox.value.scrollTop = chatBox.value.scrollHeight
 }
 
+/* ---------- authentication actions ---------- */
+async function handleLogin() {
+  if (loginBusy.value) return
+
+  loginBusy.value = true
+  loginError.value = ''
+
+  try {
+    await login(loginUsername.value.trim(), loginPassword.value)
+    isLoggedIn.value = true
+    loginPassword.value = ''
+    providerStatus.value = tier()
+    await scrollDown()
+  } catch (error) {
+    loginError.value = error?.message || 'Login failed. Please try again.'
+  } finally {
+    loginBusy.value = false
+  }
+}
+
+function handleLogout() {
+  stopListening()
+  stopSpeaking()
+  logout()
+
+  isLoggedIn.value = false
+  loginUsername.value = ''
+  loginPassword.value = ''
+  loginError.value = ''
+  draft.value = ''
+  busy.value = false
+  messages.value = [
+    {
+      role: 'assistant',
+      content: 'Good day. JARVIS systems are online. How may I assist you?',
+      provider: 'local',
+      model: 'qwen2.5:1.5b-instruct'
+    }
+  ]
+  providerStatus.value = 'Local AI · Qwen'
+}
+
 /* ---------- chat ---------- */
 async function sendMessage() {
   const text = draft.value.trim()
@@ -97,7 +147,7 @@ async function sendMessage() {
   scrollDown()
   const t0 = performance.now()
   try {
-    const res = await fetch('http://127.0.0.1:8000/api/chat/', {
+    const res = await authenticatedFetch('/api/chat/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: text, history, privacy_mode: privacyMode.value, allow_cloud: cloudAllowed.value })
@@ -110,8 +160,15 @@ async function sendMessage() {
       : data.provider === 'local_fallback' ? 'Qwen · Local fallback' : 'Qwen · Local'
     if (autoSpeak.value && voiceSupported) speak(data.answer)
   } catch (e) {
-    messages.value.push({ role: 'assistant', content: `Connection issue: ${e.message}`, provider: 'error' })
-    if (autoSpeak.value && voiceSupported) speak('I am having trouble reaching my core systems, sir.')
+    if (e?.message?.toLowerCase().includes('session has expired') ||
+        e?.message?.toLowerCase().includes('please log in')) {
+      logout()
+      isLoggedIn.value = false
+      loginError.value = 'Your session has expired. Please log in again.'
+    } else {
+      messages.value.push({ role: 'assistant', content: `Connection issue: ${e.message}`, provider: 'error' })
+      if (autoSpeak.value && voiceSupported) speak('I am having trouble reaching my core systems, sir.')
+    }
   } finally {
     busy.value = false
     scrollDown()
@@ -384,6 +441,52 @@ onBeforeUnmount(() => {
       </div>
     </transition>
 
+    <!-- Administrator login -->
+    <section v-if="!isLoggedIn && !booting" class="login-screen">
+      <div class="login-card">
+        <div class="login-logo"><AudioLines :size="32" /></div>
+        <div class="login-brand">J.A.R.V.I.S.</div>
+        <div class="login-subtitle">PERSONAL INTELLIGENCE SYSTEM</div>
+
+        <h1 class="login-heading">Welcome back</h1>
+        <p class="login-description">Authenticate to access your private AI workspace.</p>
+
+        <form class="login-form" @submit.prevent="handleLogin">
+          <label class="login-label" for="jarvis-username">ADMINISTRATOR USERNAME</label>
+          <input
+            id="jarvis-username"
+            v-model="loginUsername"
+            class="login-input"
+            type="text"
+            placeholder="Enter Django username"
+            autocomplete="username"
+            required
+          />
+
+          <label class="login-label" for="jarvis-password">PASSWORD</label>
+          <input
+            id="jarvis-password"
+            v-model="loginPassword"
+            class="login-input"
+            type="password"
+            placeholder="Enter your password"
+            autocomplete="current-password"
+            required
+          />
+
+          <p v-if="loginError" class="login-error" role="alert">{{ loginError }}</p>
+
+          <button class="login-submit" type="submit" :disabled="loginBusy">
+            {{ loginBusy ? 'AUTHENTICATING...' : 'ACCESS JARVIS' }}
+          </button>
+        </form>
+
+        <div class="login-security"><ShieldCheck :size="14" /> Secure administrator authentication</div>
+        <div class="login-footnote">Use your existing Django administrator account.</div>
+      </div>
+    </section>
+
+    <template v-else-if="isLoggedIn">
     <!-- rotary dial menu -->
     <div class="dial" :class="{ open: dialOpen }">
       <div v-if="dialOpen" class="dial-scrim" @click="!dialBusy && (dialOpen = false)"></div>
@@ -402,6 +505,9 @@ onBeforeUnmount(() => {
     <header class="hud-top">
       <div class="hud-title"><b>J.A.R.V.I.S.</b><small>What can I do for you, sir?</small></div>
       <div class="date-block"><div class="d-num">{{ dayNum }}</div><div class="d-txt"><b>{{ monthName }}</b><small>{{ weekday }}</small></div></div>
+      <button class="logout-button" type="button" @click="handleLogout">
+        <ShieldCheck :size="14" /> LOG OUT
+      </button>
     </header>
 
     <main class="hud-main">
@@ -519,5 +625,189 @@ onBeforeUnmount(() => {
       <div class="power">Currently power level is <b>100</b> percent and holding steady.</div>
       <div class="foot-r"><span class="live-dot"></span> ALL SYSTEMS STANDING BY · v0.4</div>
     </footer>
+    </template>
   </div>
 </template>
+
+<style>
+/* ---------- JARVIS administrator login ---------- */
+.login-screen {
+  position: relative;
+  z-index: 5;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 28px 18px;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 430px;
+  box-sizing: border-box;
+  padding: 42px 36px 30px;
+  border: 1px solid rgba(92, 190, 255, 0.24);
+  border-radius: 18px;
+  background: linear-gradient(145deg, rgba(13, 27, 43, 0.97), rgba(7, 15, 27, 0.98));
+  box-shadow: 0 24px 90px rgba(0, 0, 0, 0.48), 0 0 45px rgba(35, 151, 220, 0.08);
+  backdrop-filter: blur(18px);
+}
+
+.login-logo {
+  width: 62px;
+  height: 62px;
+  margin: 0 auto 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #69caff;
+  border: 1px solid rgba(105, 202, 255, 0.42);
+  border-radius: 16px;
+  background: rgba(46, 153, 220, 0.08);
+  box-shadow: 0 0 28px rgba(62, 177, 245, 0.12);
+}
+
+.login-brand {
+  color: #edf8ff;
+  text-align: center;
+  font-size: 25px;
+  font-weight: 700;
+  letter-spacing: 5px;
+}
+
+.login-subtitle {
+  margin-top: 8px;
+  color: #7095ae;
+  text-align: center;
+  font-size: 9px;
+  letter-spacing: 2px;
+}
+
+.login-heading {
+  margin: 38px 0 7px;
+  color: #f0f7ff;
+  font-size: 23px;
+  font-weight: 600;
+}
+
+.login-description {
+  margin: 0 0 26px;
+  color: #91a8bb;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.login-label {
+  display: block;
+  margin: 19px 0 9px;
+  color: #91b8d1;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 1.4px;
+}
+
+.login-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 14px 13px;
+  border: 1px solid #29445b;
+  border-radius: 8px;
+  outline: none;
+  background: rgba(4, 13, 24, 0.82);
+  color: #f2f8ff;
+  font: inherit;
+  font-size: 14px;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.login-input::placeholder {
+  color: #60788d;
+}
+
+.login-input:focus {
+  border-color: #55baff;
+  box-shadow: 0 0 0 3px rgba(85, 186, 255, 0.1);
+}
+
+.login-submit {
+  width: 100%;
+  margin-top: 25px;
+  padding: 15px;
+  border: 1px solid rgba(113, 208, 255, 0.28);
+  border-radius: 8px;
+  background: linear-gradient(100deg, #087ab9, #159bd6);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  cursor: pointer;
+  transition: filter 160ms ease, opacity 160ms ease;
+}
+
+.login-submit:hover:not(:disabled) {
+  filter: brightness(1.13);
+}
+
+.login-submit:disabled {
+  opacity: 0.62;
+  cursor: wait;
+}
+
+.login-error {
+  margin: 14px 0 0;
+  color: #ff8585;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.login-security {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 25px;
+  color: #78a0b7;
+  font-size: 11px;
+}
+
+.login-footnote {
+  margin-top: 12px;
+  color: #587287;
+  text-align: center;
+  font-size: 10px;
+}
+
+.logout-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 9px 12px;
+  border: 1px solid rgba(113, 177, 213, 0.24);
+  border-radius: 7px;
+  background: rgba(12, 29, 45, 0.65);
+  color: #a9c9dd;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  cursor: pointer;
+}
+
+.logout-button:hover {
+  border-color: rgba(105, 202, 255, 0.55);
+  color: #e8f7ff;
+}
+
+@media (max-width: 520px) {
+  .login-card {
+    padding: 34px 22px 26px;
+  }
+
+  .logout-button {
+    padding: 8px;
+    font-size: 9px;
+  }
+}
+</style>
