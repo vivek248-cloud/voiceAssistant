@@ -1,0 +1,159 @@
+/* Import AFTER your existing style.css:  import './jarvis-hud.css'  */
+.shell{position:relative;--c:#42dfff;--lvl:0}
+.shell.state-thinking{--c:#ffc247}
+.shell.state-speaking{--c:#6bffd8}
+.shell.state-listening{--c:#5cb8ff}
+.sidebar,.main{position:relative;z-index:2}
+
+/* background HUD */
+.hud-grid{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.5;
+  background-image:linear-gradient(#12384a33 1px,transparent 1px),linear-gradient(90deg,#12384a33 1px,transparent 1px);
+  background-size:44px 44px;
+  mask-image:radial-gradient(ellipse at 60% 25%,#000 0%,transparent 70%);-webkit-mask-image:radial-gradient(ellipse at 60% 25%,#000 0%,transparent 70%)}
+.scanline{position:fixed;left:0;right:0;height:120px;z-index:1;pointer-events:none;
+  background:linear-gradient(transparent,#42dfff0d,transparent);animation:scan 7s linear infinite}
+@keyframes scan{from{top:-120px}to{top:100%}}
+
+/* boot overlay */
+.boot{position:fixed;inset:0;z-index:50;background:#030811;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px}
+.boot-reactor{width:74px;height:74px;border-radius:50%;border:1px solid #35d5f4;display:grid;place-items:center;color:#75eeff;box-shadow:0 0 40px #24d8ff55;animation:spin-pulse 1.6s ease-in-out infinite}
+.boot-title{font-weight:800;letter-spacing:8px;font-size:18px;color:#bff6ff}
+.boot-lines{font:10px 'DM Mono',monospace;letter-spacing:1.5px;color:#58aac0;min-height:90px;text-align:left}
+.boot-leave-active{transition:opacity .6s}.boot-leave-to{opacity:0}
+@keyframes spin-pulse{50%{transform:scale(1.08);box-shadow:0 0 60px #24d8ff88}}
+
+/* arc reactor orb */
+.reactor-wrap{background:none;border:0;padding:0;color:inherit;height:190px;width:230px;margin:2px auto 0;position:relative;display:grid;place-items:center;outline-offset:6px}
+.reactor-wrap>*{position:absolute}
+.ring{border-radius:50%;border:1px solid color-mix(in srgb,var(--c) 45%,transparent)}
+.ring-a{width:130px;height:130px;border-style:dashed;animation:rot 18s linear infinite}
+.ring-b{width:158px;height:158px;border-top-color:var(--c);border-bottom-color:transparent;animation:rot 6s linear infinite reverse}
+.ring-c{width:184px;height:184px;border-left-color:var(--c);border-right-color:transparent;opacity:.6;animation:rot 11s linear infinite}
+.ticks{width:172px;height:172px;border-radius:50%;opacity:.45;
+  background:repeating-conic-gradient(var(--c) 0 1deg,transparent 1deg 7.5deg);
+  mask:radial-gradient(circle,transparent 80px,#000 81px,#000 85px,transparent 86px);-webkit-mask:radial-gradient(circle,transparent 80px,#000 81px,#000 85px,transparent 86px);animation:rot 40s linear infinite reverse}
+.halo{width:100px;height:100px;border-radius:50%;background:radial-gradient(circle,color-mix(in srgb,var(--c) 55%,transparent),transparent 70%);
+  transform:scale(calc(1 + var(--lvl)*.9));opacity:calc(.35 + var(--lvl)*.65);transition:transform .08s,opacity .08s}
+.reactor-wrap .reactor{position:absolute;border-color:var(--c);box-shadow:0 0 calc(24px + var(--lvl)*40px) color-mix(in srgb,var(--c) 45%,transparent),inset 0 0 18px color-mix(in srgb,var(--c) 25%,transparent)}
+.reactor-wrap .reactor-inner{color:var(--c)}
+.orb-thinking .ring-b{animation-duration:1.4s}.orb-thinking .ring-c{animation-duration:3s}
+.orb-listening .ring-a{animation-duration:9s}
+.orb-idle .halo{animation:breathe 3.5s ease-in-out infinite}
+@keyframes rot{to{transform:rotate(360deg)}}
+@keyframes breathe{50%{transform:scale(1.18);opacity:.8}}
+
+/* voice level bars around the orb */
+.bars{width:0;height:0}
+.bars i{position:absolute;left:-1px;top:-1px;width:2px;height:8px;background:var(--c);border-radius:2px;
+  transform:rotate(calc(var(--i)*15deg)) translateY(-100px) scaleY(calc(.4 + var(--lvl)*(1.2 + (var(--i)*7 % 5)*.35)));
+  transform-origin:center 100px;opacity:calc(.25 + var(--lvl));transition:transform .09s}
+.bars i{transform-origin:1px 101px;transform:rotate(calc(var(--i)*15deg)) translateY(-101px) scaleY(calc(.4 + var(--lvl)*(1.2 + (var(--i)*7 % 5)*.35)))}
+.orb-label{font:9px 'DM Mono',monospace;letter-spacing:3px;color:var(--c);margin:2px 0 10px;text-shadow:0 0 12px color-mix(in srgb,var(--c) 60%,transparent)}
+.hero h1 span{color:var(--c)}
+
+/* telemetry */
+.telemetry{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 4px}
+.telemetry div{border:1px solid #133548;background:#071420;border-radius:6px;padding:8px 9px}
+.telemetry small{display:block;font:8px 'DM Mono',monospace;letter-spacing:1px;color:#53788b}
+.telemetry b{display:block;margin-top:4px;font:500 12px 'DM Mono',monospace;color:#a8eaf8}
+
+/* HUD corner brackets on chat panel */
+.chat-panel{position:relative;overflow:visible;border-color:color-mix(in srgb,var(--c) 28%,#17394d)}
+.chat-panel>.panel-heading{border-radius:12px 12px 0 0}
+.corner{position:absolute;width:14px;height:14px;border:2px solid var(--c);pointer-events:none;opacity:.9}
+.corner.tl{top:-1px;left:-1px;border-right:0;border-bottom:0;border-top-left-radius:12px}
+.corner.tr{top:-1px;right:-1px;border-left:0;border-bottom:0;border-top-right-radius:12px}
+.corner.bl{bottom:-1px;left:-1px;border-right:0;border-top:0;border-bottom-left-radius:12px}
+.corner.br{bottom:-1px;right:-1px;border-left:0;border-top:0;border-bottom-right-radius:12px}
+
+/* voice controls */
+.voice-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:11px 19px;border-bottom:1px solid #142f41;background:#07131f}
+.mic-btn,.chip{display:inline-flex;align-items:center;gap:7px;padding:7px 11px;border-radius:999px;border:1px solid #1d4a5e;background:#0a1e2b;color:#8fb7c8;font-size:10px;font-weight:600}
+.chip:hover,.mic-btn:hover{border-color:var(--c);color:#d4f6ff}
+.chip.on{background:#0d3344;border-color:#1f90ad;color:#b8f3ff}
+.mic-btn{background:#0e7892;border-color:#20a8c4;color:#e7fbff}
+.mic-btn.on{background:#123448;border-color:var(--c);box-shadow:0 0 0 0 #42dfff66;animation:mic-ring 1.6s infinite}
+.mic-btn:disabled{opacity:.4;cursor:not-allowed}
+.chip.stop{border-color:#b8643f;color:#ffc9a8;background:#2a1710}
+.voice-hint{margin-left:auto;font:8px 'DM Mono',monospace;letter-spacing:1px;color:#456a7d}
+@keyframes mic-ring{70%{box-shadow:0 0 0 10px #42dfff00}100%{box-shadow:0 0 0 0 #42dfff00}}
+.voice-settings{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;align-items:end;padding:13px 19px;border-bottom:1px solid #142f41;background:#081622}
+.voice-settings label{display:flex;flex-direction:column;gap:6px;font:8px 'DM Mono',monospace;letter-spacing:1px;color:#65899b}
+.voice-settings select{background:#0a202d;color:#c9eaf4;border:1px solid #245064;border-radius:6px;padding:8px;font:10px Manrope,sans-serif}
+.voice-settings input[type=range]{accent-color:#21b8d6}
+.voice-note{padding:8px 19px;font-size:10px;color:#e5bb75;background:#1a150a55;border-bottom:1px solid #142f41}
+.replay{background:none;border:0;color:#58aac0;margin-left:8px;padding:0;vertical-align:middle}
+.replay:hover{color:#bff6ff}
+.message-row.assistant .message-text{border-left:2px solid color-mix(in srgb,var(--c) 35%,transparent);padding-left:12px}
+.composer{border-color:color-mix(in srgb,var(--c) 30%,#1a4053)}
+.messages{max-height:360px}
+
+@media(prefers-reduced-motion:reduce){.ring,.ticks,.scanline,.halo,.boot-reactor,.mic-btn.on{animation:none!important}}
+
+/* ===== MOBILE LAYOUT ===== */
+.shell{min-height:100vh;min-height:100dvh}
+@media(max-width:760px){
+  html,body{overflow-x:hidden}
+  .shell{display:block}
+  /* drawer: must stay fixed (the desktop rule above sets position:relative) */
+  .sidebar{position:fixed;z-index:30;left:0;top:0;bottom:0;width:min(300px,86vw);overflow-y:auto;
+    padding:max(20px,env(safe-area-inset-top)) 16px 20px;background:#040a12f7}
+  .scrim{z-index:25}
+  .main{width:100%}
+  .topbar{position:sticky;top:0;z-index:10;box-sizing:content-box;height:54px;padding:env(safe-area-inset-top) 12px 0;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+  .icon-button{width:42px;height:42px}
+  .breadcrumb{display:none}
+  .top-status{margin-left:auto}
+  .content{padding:8px 10px calc(14px + env(safe-area-inset-bottom))}
+
+  .hero{padding:0 0 12px}
+  .eyebrow{display:none}
+  .reactor-wrap{transform:scale(.7);margin:-30px auto -34px}
+  .orb-label{margin:0 0 6px}
+  .hero h1{font-size:26px;letter-spacing:-1px}
+  .hero-copy{font-size:12px;margin:8px 0 14px;padding:0 6px}
+  .metrics{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .metric,.metric:last-child{min-width:0;padding:8px 10px}
+  .metric:first-child{grid-column:1/-1}
+  .metric:nth-child(3){display:none}
+  .metric small{font-size:8px}.metric strong{font-size:11px}
+
+  .chat-panel{border-radius:10px}
+  .panel-heading{height:46px;padding:0 12px}
+  .panel-heading small{display:none}
+  .privacy-controls{grid-template-columns:1fr;gap:10px;padding:12px}
+  .privacy-heading,.cloud-consent,.privacy-warning{grid-column:1}
+  .privacy-heading small{display:none}
+  .mode-field select,.voice-settings select{min-height:42px;font-size:14px}
+
+  .voice-bar{gap:6px;padding:10px 12px}
+  .mic-btn{flex:1 1 100%;justify-content:center;min-height:46px;font-size:12px}
+  .chip{min-height:38px;font-size:11px;padding:7px 12px}
+  .voice-hint{display:none}
+  .voice-settings{grid-template-columns:1fr 1fr;padding:12px}
+  .voice-settings label:first-child{grid-column:1/-1}
+  .voice-note{padding:8px 12px}
+
+  .messages{padding:14px 12px 8px;max-height:none;height:min(48vh,420px);height:min(48dvh,420px);-webkit-overflow-scrolling:touch}
+  .message-row{gap:9px}
+  .message-text{font-size:14px;line-height:1.65}
+  .message-meta{font-size:9px}
+  .composer{margin:0 8px 8px;padding:10px}
+  .composer-top{font-size:11px;min-width:0}
+  .composer-top span:nth-child(2){overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .composer textarea{font-size:16px;min-height:56px} /* 16px stops iOS zoom-on-focus */
+  .composer-bottom{gap:10px}
+  .compose-note{flex:1;min-width:0;font-size:9px;line-height:1.4}
+  .send-button{min-height:42px;padding:9px 16px;font-size:12px}
+  footer{flex-direction:column;gap:6px;align-items:center;text-align:center}
+  footer span:last-child{text-align:center}
+}
+@media(max-width:380px){
+  .voice-settings{grid-template-columns:1fr}
+  .reactor-wrap{transform:scale(.62);margin:-40px auto -42px}
+  .hero h1{font-size:23px}
+}
+@media(max-height:480px) and (orientation:landscape){
+  .reactor-wrap{transform:scale(.5);margin:-55px auto -55px}
+  .messages{height:40vh}
+}
