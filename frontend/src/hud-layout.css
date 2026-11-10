@@ -1,0 +1,108 @@
+/* Import LAST:  style.css → jarvis-hud.css → hud-layout.css */
+.shell.hud{--o:#ff9a2e;display:flex;flex-direction:column;min-height:100vh;min-height:100dvh;padding:14px 18px 12px;overflow-x:hidden}
+.hud-top,.hud-main,.hud-foot{position:relative;z-index:2}
+
+/* ---------- top bar ---------- */
+.hud-top{display:flex;justify-content:flex-end;align-items:flex-start;min-height:64px;padding-left:80px}
+.hud-title{position:absolute;left:50%;top:0;transform:translateX(-50%);text-align:center;padding:8px 34px;border:1px solid #1b6a82;background:#061622d9;
+  clip-path:polygon(12px 0,calc(100% - 12px) 0,100% 50%,calc(100% - 12px) 100%,12px 100%,0 50%)}
+.hud-title b{display:block;letter-spacing:5px;font-size:13px;color:#bff6ff}
+.hud-title small{font:9px 'DM Mono',monospace;letter-spacing:1px;color:#58aac0}
+.date-block{display:flex;align-items:center;gap:10px;border:1px solid #6b4416;border-right:4px solid var(--o);background:#140d05cc;padding:6px 14px}
+.d-num{font-size:40px;font-weight:800;line-height:1;color:#ffd9a0;text-shadow:0 0 14px #ff9a2e66}
+.d-txt b{display:block;font-size:11px;letter-spacing:2px;color:var(--o)}
+.d-txt small{font:9px 'DM Mono',monospace;color:#c79a5e;letter-spacing:1px}
+
+/* ---------- grid + cards ---------- */
+.hud-main{flex:1;display:grid;grid-template-columns:270px minmax(0,1fr) 270px;gap:16px;align-items:start;margin-top:8px}
+.col{display:flex;flex-direction:column;gap:14px;min-width:0}
+.col-center{align-items:stretch}
+.card{position:relative;padding:12px 14px 14px;border:1px solid #17586f99;background:linear-gradient(160deg,#08192599,#050d16d9);
+  clip-path:polygon(0 0,calc(100% - 14px) 0,100% 14px,100% 100%,14px 100%,0 calc(100% - 14px));border-left:3px solid var(--c)}
+.card h3{display:flex;align-items:center;gap:6px;margin:0 0 10px;padding-bottom:7px;border-bottom:1px solid #123b4e;font:9px 'DM Mono',monospace;letter-spacing:2px;font-weight:500;color:#58b4c9}
+.card h3 .clear-button{margin-left:auto}
+.flash{animation:flash 1.3s}
+@keyframes flash{0%,60%{box-shadow:0 0 0 2px var(--o),0 0 28px #ff9a2e88}100%{box-shadow:none}}
+
+/* reuse earlier components inside cards */
+.card .privacy-controls{display:flex;flex-direction:column;gap:10px;padding:0;border:0;background:none}
+.card .mode-field select{min-height:36px}
+.card .voice-bar{padding:0;border:0;background:none}
+.card .voice-settings{grid-template-columns:1fr;padding:12px 0 0;border:0;background:none}
+.card .voice-note{padding:8px 0 0;background:none;border:0}
+.voice-hint2{margin-top:10px;font:8px 'DM Mono',monospace;letter-spacing:1px;color:#456a7d}
+.card .prompt-link{display:block;width:100%}
+.card .metric{min-width:0;margin-bottom:8px}
+.col-center .reactor-wrap{transform:scale(1.1);margin:8px auto 4px}
+.col-center .orb-label{text-align:center;margin:6px 0 12px}
+.card.chat .messages{max-height:none;height:clamp(240px,36vh,400px)}
+.card.chat .composer{margin:0}
+
+/* gauges */
+.gauges{display:flex;justify-content:space-between;gap:6px;margin-bottom:12px}
+.gauge{--p:0;position:relative;width:70px;height:70px;border-radius:50%;display:grid;place-items:center;
+  background:conic-gradient(var(--c) calc(var(--p)*1%),#0d2735 0);transition:background .4s}
+.gauge:before{content:'';position:absolute;inset:6px;border-radius:50%;background:#06121c}
+.gauge span{position:relative;text-align:center}
+.gauge b{display:block;font:500 11px 'DM Mono',monospace;color:#c4f3ff}
+.gauge small{font:7px 'DM Mono',monospace;letter-spacing:1px;color:#58aac0}
+.rows div{display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-top:1px solid #10303f}
+.rows small{font:8px 'DM Mono',monospace;letter-spacing:1px;color:#53788b}
+.rows b{font:500 10px 'DM Mono',monospace;color:#a8eaf8;text-align:right}
+
+/* footer: big clock + power line */
+.hud-foot{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-top:14px}
+.big-clock{font:800 54px/1 'DM Mono',monospace;letter-spacing:-2px;color:#e8fbff;text-shadow:0 0 22px var(--c)}
+.power{flex:1;text-align:center;font:10px 'DM Mono',monospace;letter-spacing:1px;color:#9ccbd8}
+.power b{color:var(--o)}
+.foot-r{font:8px 'DM Mono',monospace;letter-spacing:1px;color:#3e6175;text-align:right}
+
+/* ---------- ROTARY DIAL MENU ---------- */
+.dial{position:fixed;top:14px;left:14px;z-index:60;width:60px;height:60px}
+.dial-scrim{position:fixed;inset:0;background:#02060cc4;backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
+.dial-hub{position:absolute;left:0;top:0;z-index:3;width:60px;height:60px;border-radius:50%;display:grid;place-items:center;cursor:pointer;
+  border:2px solid var(--c);color:var(--c);background:radial-gradient(circle,#14536a,#071622 70%);
+  box-shadow:0 0 22px color-mix(in srgb,var(--c) 45%,transparent);transition:transform .5s cubic-bezier(.2,.9,.2,1)}
+.dial:not(.open) .dial-hub{animation:hubpulse 3s ease-in-out infinite}
+@keyframes hubpulse{50%{box-shadow:0 0 34px color-mix(in srgb,var(--c) 70%,transparent)}}
+.dial.open .dial-hub{transform:translate(120px,120px) scale(.95)}
+.dial-body{position:absolute;left:0;top:0;width:300px;height:300px;opacity:0;pointer-events:none;
+  transform:scale(.12);transform-origin:30px 30px;transition:transform .5s cubic-bezier(.2,.9,.2,1),opacity .3s}
+.dial.open .dial-body{opacity:1;pointer-events:auto;transform:scale(1)}
+.dial-disc{position:absolute;inset:0;border-radius:50%;border:2px solid #1d8ba8;
+  background:radial-gradient(circle,#06131d 0 36px,#0c2634 37px,#081923 100%);
+  box-shadow:0 0 60px #12b9e233,inset 0 0 40px #000a;
+  transform:rotate(var(--rot,0deg));transition-property:transform;transition-timing-function:cubic-bezier(.4,.1,.3,1)}
+.dial-disc:before{content:'';position:absolute;inset:14px;border-radius:50%;border:1px dashed #1d8ba855}
+.hole{position:absolute;left:50%;top:50%;width:46px;height:46px;margin:-23px;padding:0;border-radius:50%;cursor:pointer;
+  border:2px solid #2aa6c4;background:#030a10;color:#8defff;box-shadow:inset 0 0 12px #000,0 0 10px #1bb7d733;
+  transform:rotate(var(--a)) translateY(-108px);transition:border-color .2s,color .2s,box-shadow .2s}
+.hole-in{position:relative;display:grid;place-items:center;width:100%;height:100%;
+  transform:rotate(calc(-1 * (var(--a) + var(--rot))))} /* keeps icons upright while the disc turns */
+.hole:hover,.hole:focus-visible,.hole.active{border-color:var(--o);color:#ffc77a;box-shadow:0 0 16px #ff9a2e77;outline:0}
+.hole em{position:absolute;top:calc(100% + 3px);left:50%;transform:translateX(-50%);padding:1px 5px;border-radius:3px;
+  font:8px 'DM Mono',monospace;letter-spacing:1px;font-style:normal;white-space:nowrap;background:#030a10;color:#ffc77a;
+  opacity:0;pointer-events:none;transition:opacity .2s}
+.hole:hover em,.hole.active em{opacity:1}
+.dial-stop{position:absolute;left:50%;top:50%;z-index:2;width:8px;height:30px;margin:-15px -4px;border-radius:4px;
+  background:var(--o);box-shadow:0 0 12px #ff9a2e99;transform:rotate(120deg) translateY(-136px)} /* the finger stop */
+
+/* ---------- responsive ---------- */
+@media(max-width:1100px){.hud-main{grid-template-columns:240px minmax(0,1fr)}.col:last-child{grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr;align-items:start}}
+@media(max-width:760px){
+  .shell.hud{padding:10px 10px calc(12px + env(safe-area-inset-bottom))}
+  .hud-top{min-height:60px;padding-left:72px;justify-content:space-between;align-items:center}
+  .hud-title{position:static;transform:none;padding:6px 18px}
+  .hud-title small{display:none}
+  .d-num{font-size:28px}.date-block{padding:4px 10px}.d-txt small{display:none}
+  .hud-main{grid-template-columns:1fr;gap:12px}
+  .col-center{order:-1}
+  .col:last-child{grid-template-columns:1fr}
+  .col-center .reactor-wrap{transform:scale(.7);margin:-30px auto -34px}
+  .card.chat .messages{height:min(46dvh,400px)}
+  .hud-foot{flex-direction:column;align-items:center;text-align:center;gap:8px}
+  .big-clock{font-size:42px}
+  .foot-r{text-align:center}
+  .dial{top:calc(10px + env(safe-area-inset-top))}
+}
+@media(prefers-reduced-motion:reduce){.dial-hub,.dial-body{animation:none!important;transition-duration:.01s!important}}
