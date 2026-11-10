@@ -143,6 +143,9 @@ async function sendMessage() {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
+        // Send the latest text as `message` for the chat endpoint's required field.
+        // Keep `messages` as conversation context for providers that use chat history.
+        message: text,
         messages: [...history, { role: 'user', content: text }],
         privacy_mode: privacyMode.value,
         allow_cloud: cloudAllowed.value
